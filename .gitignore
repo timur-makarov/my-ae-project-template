@@ -1,0 +1,6 @@
+.worktrees/
+.agentic/state/active-ticket
+.agentic/state/close-authorized-*
+.agentic/state/critic-payload-*
+.agentic/state/scope-*.txt
+_staging/

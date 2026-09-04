@@ -1,0 +1,86 @@
+# Agentic environment configuration — the single source of tunables.
+# Skills and scripts read this file; edit values here instead of editing skills.
+# Keep the format flat (key: value, one extra level of nesting) — scripts parse it with awk.
+# Loosening numbers or turning a gate off requires a HIGH ticket + Ruling: (floor-guard).
+
+tracker: local-markdown        # local-markdown | github-issues
+
+base_branch: dev               # PRs target this branch
+branch_prefix: ticket/         # implementation branches: ticket/NN-slug
+worktree_dir: .worktrees       # local isolation fallback (must be git-ignored)
+
+models:
+  planner: inherit
+  implementer: inherit
+  implementer_mechanical: inherit
+  reviewer: inherit
+  critic: inherit
+  escalation: inherit
+
+models_allowed:
+  - inherit
+
+risk:
+  low_fast_lane: true
+  high_requires_human_merge: true
+
+risk_paths:
+  "migrations/**": HIGH
+  "**/auth/**": HIGH
+  "**/*payment*": HIGH
+  ".cursor/**": HIGH
+  "scripts/**": MEDIUM
+  ".agentic/templates/**": MEDIUM
+  ".agents/**": MEDIUM
+  ".github/**": MEDIUM
+
+# Template ships false so a fresh copy is editable. /agentic-init flips to true.
+scope:
+  strict: false
+
+migrations_dir: migrations
+
+verify:
+  test: "scripts/selftest.sh"
+  lint: "scripts/env-lint.sh"
+  typecheck: ""
+  e2e: ""
+
+limits:
+  fix_rounds_per_piece: 5
+  epicycles_before_reopen: 2
+  context_md_max_lines: 120
+  intake_strict: true
+  max_scope_globs: 5
+  require_worktree: false
+  diff_warn_lines: 300
+  diff_fail_lines: 0
+  tdd_required: true
+  exception_max_days: 90
+
+floor_guard: true
+craft_skills: true
+
+critic:
+  fanout: true
+
+# Ticket front matter may override network / new_deps.
+# Pipe-to-interpreter is always deny regardless of network:.
+guard:
+  network: ask
+  install_pipe: deny
+  new_deps: ask
+  secrets: ask
+  commit_requires_nn: true
+  privileged: deny
+  metadata: deny
+
+floor_ignore:
+  - "*.md"
+  - "*.jsonl"
+  - "vendor/**"
+  - "_staging/**"
+  - "scripts/selftest.sh"
+  - "scripts/floor-guard.sh"
+
+floor_exceptions:

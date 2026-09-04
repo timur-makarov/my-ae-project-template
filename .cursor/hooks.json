@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": ".cursor/hooks/session-start.sh",
+        "timeout": 15
+      }
+    ],
+    "beforeShellExecution": [
+      {
+        "command": ".cursor/hooks/guard.sh",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": ".cursor/hooks/audit.sh",
+        "timeout": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": ".cursor/hooks/protect.sh",
+        "matcher": "Write|StrReplace|Delete|EditNotebook|Read",
+        "timeout": 10,
+        "failClosed": true
+      },
+      {
+        "command": ".cursor/hooks/mcp-guard.sh",
+        "matcher": "WebFetch|WebSearch",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "beforeReadFile": [
+      {
+        "command": ".cursor/hooks/protect.sh",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "beforeMCPExecution": [
+      {
+        "command": ".cursor/hooks/mcp-guard.sh",
+        "timeout": 10,
+        "failClosed": true
+      }
+    ],
+    "stop": [
+      {
+        "command": ".cursor/hooks/stop.sh",
+        "timeout": 10,
+        "loop_limit": 0
+      }
+    ]
+  }
+}

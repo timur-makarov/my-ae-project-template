@@ -1,0 +1,50 @@
+# GitHub Actions — CI is the wall; Cursor hooks are the fast path.
+# Ticket branches (`ticket/NN-slug`) run the full gate.sh pr.
+# Template / maintenance branches run environment gates only (no ticket NN).
+
+name: agentic-gates
+
+on:
+  pull_request:
+    branches: [dev, main, master]
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install jq
+        run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: env-lint
+        run: scripts/env-lint.sh --protected-diff
+
+      - name: ticket-lint
+        run: scripts/ticket-lint.sh
+
+      - name: floor-guard
+        run: scripts/floor-guard.sh
+
+      - name: verify
+        run: scripts/verify.sh
+
+      - name: debt-lint
+        run: scripts/debt-lint.sh
+
+      - name: model-check
+        run: scripts/model-check.sh
+
+      - name: gate pr (ticket branches)
+        run: |
+          set -euo pipefail
+          REF="${GITHUB_HEAD_REF:-}"
+          NN="$(printf '%s' "$REF" | sed -n 's/^ticket\/0*\([0-9][0-9]*\).*/\1/p')"
+          if [ -z "$NN" ]; then
+            echo "CI: branch '$REF' is not ticket/NN-slug — environment gates only (template/maintenance)."
+            exit 0
+          fi
+          NN="$(printf '%02d' "$NN")"
+          scripts/gate.sh pr "$NN"
