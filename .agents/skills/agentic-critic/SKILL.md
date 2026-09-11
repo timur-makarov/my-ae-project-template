@@ -31,7 +31,8 @@ Fill `.agentic/templates/critic_report.md` → write to `.agentic/journal/<NN>-c
 `APPROVED` | `CHANGES_REQUESTED` (findings with file:line, severity, why it matters) | `REOPEN_REQUIRED` (root hypothesis wrong — say which observation killed it). Plus a deploy watchlist: the top decaying fact to watch after merge and the log line/metric that would signal failure.
 
 One line per real defect found also goes to `.agentic/journal/lessons.md`:
-`- [NN] <defect> — <the check that would have caught it earlier>`
+`- [NN] YYYY-MM-DD <defect> — <the check that would have caught it earlier> — cite:path needle:"token"`
+Prefer `cite:` under `scripts/` or a test so the lesson survives `limits.lesson_ttl_days`.
 
 ## Rationalizations
 

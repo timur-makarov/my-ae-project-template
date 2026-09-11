@@ -469,6 +469,7 @@ stage_archive() {
   if ! grep -qE 'Lessons: none|^- \[' "$JOURNAL/lessons.md" 2>/dev/null; then
     fail "lessons.md missing explicit 'Lessons: none' or a new '- [NN]' entry"
   fi
+  "$SCRIPT_DIR/memory-lint.sh" || fail "memory-lint failed"
   mkdir -p "$STATE"
   local token="$STATE/close-authorized-$NN"
   {

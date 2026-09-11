@@ -57,6 +57,7 @@ limits:
   diff_fail_lines: 0
   tdd_required: true
   exception_max_days: 90
+  lesson_ttl_days: 90
 
 floor_guard: true
 craft_skills: true

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# env-lint.sh — enforcement-layer integrity + CONTEXT.md cap + optional protected-path diff.
+# env-lint.sh — enforcement-layer integrity + CONTEXT.md cap + memory-lint + optional protected-path diff.
 #
 # Usage:
 #   scripts/env-lint.sh                 # compare hashes to .agentic/state/enforcement.sha256
@@ -102,6 +102,10 @@ context_cap() {
   return 0
 }
 
+memory_lint() {
+  "$SCRIPT_DIR/memory-lint.sh"
+}
+
 protected_diff() {
   has_git || { echo "env-lint: --protected-diff requires git" >&2; return 1; }
   local base
@@ -159,12 +163,14 @@ case "$MODE" in
   --protected-diff)
     compare_manifest || fail=1
     context_cap || fail=1
+    memory_lint || fail=1
     failclosed_intact || fail=1
     protected_diff || fail=1
     ;;
   "")
     compare_manifest || fail=1
     context_cap || fail=1
+    memory_lint || fail=1
     failclosed_intact || fail=1
     ;;
   *) echo "usage: scripts/env-lint.sh [--write-manifest|--protected-diff]" >&2; exit 2 ;;

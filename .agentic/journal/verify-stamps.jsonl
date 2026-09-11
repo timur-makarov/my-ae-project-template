@@ -1,0 +1,2 @@
+{"ts":"2026-09-11T15:16:44Z","head":"c642a1d2d2f53b5afe16fcfbf30ed81b56133cdb","dirty":true,"steps":{"test":0,"lint":0,"typecheck":"skip"},"commands":{"test":"scripts/selftest.sh","lint":"scripts/env-lint.sh","typecheck":""},"e2e":false,"exit":0,"test_count":101}
+{"ts":"2026-09-11T15:17:17Z","head":"c642a1d2d2f53b5afe16fcfbf30ed81b56133cdb","dirty":true,"steps":{"test":0,"lint":0,"typecheck":"skip"},"commands":{"test":"scripts/selftest.sh","lint":"scripts/env-lint.sh","typecheck":""},"e2e":false,"exit":0,"test_count":101}

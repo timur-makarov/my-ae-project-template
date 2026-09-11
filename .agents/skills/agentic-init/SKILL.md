@@ -27,7 +27,7 @@ Ensure this hierarchy exists (create missing pieces from `.agentic/templates/`, 
 └── templates/  (ticket-lite, ticket-full, critic_report, adr, pr, handoff)
 scripts/verify.sh  scripts/ticket-lint.sh  scripts/review-package.sh
 scripts/gate.sh  scripts/stamp-check.sh  scripts/env-lint.sh
-scripts/evidence-check.sh  scripts/artifact-lint.sh  scripts/debt-lint.sh
+scripts/memory-lint.sh  scripts/evidence-check.sh  scripts/artifact-lint.sh  scripts/debt-lint.sh
 scripts/model-check.sh  scripts/selftest.sh  scripts/lib.sh  scripts/floor-guard.sh
 .cursor/rules/constitution.mdc  .cursor/rules/default_swe.mdc
 .cursor/hooks.json  .cursor/hooks/guard.sh  .cursor/hooks/audit.sh
@@ -48,7 +48,7 @@ scripts/model-check.sh  scripts/selftest.sh  scripts/lib.sh  scripts/floor-guard
 - `config.yml` → `scope.strict: true` after the human confirms the copy is the real project (the template ships false so first edits aren't bricked).
 - `config.yml` → `craft_skills`: keep true unless the host wants the spine only.
 - `map.md` → **Destination**: one sentence, from the human. Don't invent it.
-- `context/CONTEXT.md`: seed glossary/invariants if the project already has code worth reading.
+- `context/CONTEXT.md`: seed glossary/invariants if the project already has code worth reading. Every load-bearing row needs `cite:path needle:"token"` (`scripts/memory-lint.sh`).
 
 ### 4. Prove the gate works
 

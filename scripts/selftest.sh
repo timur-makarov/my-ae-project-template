@@ -375,6 +375,7 @@ assert "hooks.json has EditNotebook" grep -q EditNotebook "$ROOT/.cursor/hooks.j
 assert "hooks.json stop loop_limit 0" grep -q '"loop_limit": 0' "$ROOT/.cursor/hooks.json"
 assert "gate.sh exists" test -x "$SCRIPT_DIR/gate.sh"
 assert "env-lint.sh exists" test -x "$SCRIPT_DIR/env-lint.sh"
+assert "memory-lint.sh exists" test -x "$SCRIPT_DIR/memory-lint.sh"
 assert "evidence-check.sh exists" test -x "$SCRIPT_DIR/evidence-check.sh"
 assert "protect.sh exists" test -x "$HOOKS/protect.sh"
 assert "stop.sh exists" test -x "$HOOKS/stop.sh"
@@ -719,6 +720,178 @@ fi
 echo "selftest: implement/critic rationalization tables"
 assert "implement skill has Rationalizations" grep -q '^## Rationalizations' "$ROOT/.agents/skills/agentic-implement/SKILL.md"
 assert "critic skill has Rationalizations" grep -q '^## Rationalizations' "$ROOT/.agents/skills/agentic-critic/SKILL.md"
+
+echo "selftest: memory-lint"
+ML="$SCRIPT_DIR/memory-lint.sh"
+MEM="$TMP/memroot"
+mkdir -p "$MEM/.agentic/context" "$MEM/.agentic/journal" "$MEM/scripts"
+printf 'token-alpha\n' > "$MEM/scripts/foo.sh"
+printf 'token-alpha\n' > "$MEM/notes.md"
+printf 'hello\n' > "$MEM/README.md"
+TODAY="$(date -u +%Y-%m-%d)"
+good_ctx() {
+  cat > "$MEM/.agentic/context/CONTEXT.md" <<'EOF'
+# Domain Context
+
+## Glossary
+
+| Term | Meaning | Cite |
+|---|---|---|
+| Foo | a foo | scripts/foo.sh needle:"token-alpha" |
+
+## Invariants
+
+- Foo holds. cite:scripts/foo.sh needle:"token-alpha"
+EOF
+}
+good_lessons_none() { printf 'Lessons: none\n' > "$MEM/.agentic/journal/lessons.md"; }
+good_lesson() {
+  printf -- '- [01] %s defect one — a check — cite:scripts/foo.sh needle:"token-alpha"\n' "$TODAY" > "$MEM/.agentic/journal/lessons.md"
+}
+ml() { "$ML" --root "$MEM" --context "$MEM/.agentic/context/CONTEXT.md" --lessons "$MEM/.agentic/journal/lessons.md"; }
+
+good_ctx
+good_lesson
+if ml >/dev/null; then
+  echo "  ok  — good CONTEXT + good lesson"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — good CONTEXT + good lesson should pass" >&2
+  ml >&2 || true
+  fail=$((fail + 1))
+fi
+
+good_ctx
+good_lessons_none
+if ml >/dev/null; then
+  echo "  ok  — Lessons: none"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — Lessons: none should pass" >&2
+  fail=$((fail + 1))
+fi
+
+good_ctx
+cat > "$MEM/.agentic/context/CONTEXT.md" <<'EOF'
+# Domain Context
+
+## Invariants
+
+- Foo holds with no cite.
+EOF
+good_lessons_none
+if ml >/dev/null 2>"$TMP/ml.err"; then
+  echo "  FAIL — missing cite should fail" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — missing cite fails lint"
+  pass=$((pass + 1))
+fi
+
+good_ctx
+cat > "$MEM/.agentic/context/CONTEXT.md" <<'EOF'
+# Domain Context
+
+## Invariants
+
+- Missing file. cite:scripts/missing.sh needle:"token-alpha"
+EOF
+good_lessons_none
+if ml >/dev/null 2>"$TMP/ml.err"; then
+  echo "  FAIL — missing path should fail" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — missing path fails lint"
+  pass=$((pass + 1))
+fi
+
+good_ctx
+cat > "$MEM/.agentic/context/CONTEXT.md" <<'EOF'
+# Domain Context
+
+## Invariants
+
+- Needle miss. cite:scripts/foo.sh needle:"nope"
+EOF
+good_lessons_none
+if ml >/dev/null 2>"$TMP/ml.err"; then
+  echo "  FAIL — needle miss should fail" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — needle miss fails lint"
+  pass=$((pass + 1))
+fi
+
+good_ctx
+cat > "$MEM/.agentic/context/CONTEXT.md" <<'EOF'
+# Domain Context
+
+## Invariants
+
+- Dup README. cite:README.md needle:"hello"
+EOF
+good_lessons_none
+if ml >/dev/null 2>"$TMP/ml.err"; then
+  echo "  FAIL — README cite should fail" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — README cite fails lint"
+  pass=$((pass + 1))
+fi
+
+good_ctx
+printf -- '- [01] defect undated — a check — cite:scripts/foo.sh needle:"token-alpha"\n' > "$MEM/.agentic/journal/lessons.md"
+if ml >/dev/null 2>"$TMP/ml.err"; then
+  echo "  FAIL — lesson missing date should fail" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — lesson missing date fails lint"
+  pass=$((pass + 1))
+fi
+
+good_ctx
+printf -- '- [01] 2000-01-01 old defect — a check — cite:notes.md needle:"token-alpha"\n' > "$MEM/.agentic/journal/lessons.md"
+if ml >/dev/null 2>"$TMP/ml.err"; then
+  echo "  FAIL — expired prose lesson should fail" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — expired prose lesson fails lint"
+  pass=$((pass + 1))
+fi
+
+good_ctx
+printf -- '- [02] 2000-01-01 old script — a check — cite:scripts/foo.sh needle:"token-alpha"\n' > "$MEM/.agentic/journal/lessons.md"
+if ml >/dev/null; then
+  echo "  ok  — expired lesson citing scripts/ is enforcing"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — expired enforcing cite should pass" >&2
+  ml >&2 || true
+  fail=$((fail + 1))
+fi
+
+good_ctx
+cat > "$MEM/.agentic/journal/lessons.md" <<'EOF'
+- [01] 2000-01-01 dropme — a check — cite:notes.md needle:"token-alpha"
+- DROPPED 2026-09-11 dropme
+EOF
+if ml >/dev/null; then
+  echo "  ok  — DROPPED inactivates expired prose cite"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — DROPPED should skip expired lesson" >&2
+  ml >&2 || true
+  fail=$((fail + 1))
+fi
+
+if "$ML" >/dev/null; then
+  echo "  ok  — live template CONTEXT.md + lessons.md"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — live template memory-lint" >&2
+  "$ML" >&2 || true
+  fail=$((fail + 1))
+fi
 
 
 echo "selftest: $pass passed, $fail failed"

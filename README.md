@@ -88,7 +88,7 @@ A script or hook can **deny**, **ask**, or **exit non-zero**. Skills and the con
 | Ledger piece-complete needs commit range + brief + report + review package; fix-round cap; `Rulings: none` or listed | `artifact-lint.sh` |
 | `@ts-ignore` / eslint-disable / noqa, empty `catch`, `.skip`/`xit`, deleted assertions, lowered config numbers | `floor-guard.sh` |
 | `PONYTAIL(id):` must resolve to a ticket or ADR | `debt-lint.sh` |
-| Hook/script hash drift; `failClosed: false`; CONTEXT.md over cap; CI `--protected-diff` without HIGH | `env-lint.sh` |
+| Hook/script hash drift; `failClosed: false`; CONTEXT.md over cap; stale memory cites/needles/TTL; CI `--protected-diff` without HIGH | `env-lint.sh` |
 | MEDIUM/HIGH missing `## Definition of Done`; archive without lessons line or `Lessons: none` | `gate.sh archive` |
 | Diff insertions over `limits.diff_fail_lines` (shipped 0 = off; warn at 300) | `gate.sh pr` |
 

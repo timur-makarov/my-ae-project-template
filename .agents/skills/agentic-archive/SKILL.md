@@ -26,9 +26,9 @@ The gate requires: ticket lint, fresh green stamp on this HEAD, critic APPROVED 
 
 ## 4. Distill memory
 
-- `context/CONTEXT.md`: new terms → glossary; new invariants or risk boundaries → their sections. Then check the line count against `limits.context_md_max_lines` — over the cap, **compact** (merge related entries, drop stale ones) rather than append. CONTEXT.md is distilled memory, not a log.
-- Major architectural decision (affects multiple modules or external systems) → ADR in `context/adr/` from the template, indexed in CONTEXT.md.
-- Real defects the critic or review found → confirm they're in `journal/lessons.md` (one line each). If nothing to distill, append or keep the sentinel `Lessons: none` (the line must exist either way).
+- `context/CONTEXT.md`: new terms → glossary; new invariants or risk boundaries → their sections. Each load-bearing row needs `cite:path needle:"token"` (glossary Cite column). Then check the line count against `limits.context_md_max_lines` — over the cap, **compact** (merge related entries, drop stale ones) rather than append. CONTEXT.md is distilled memory, not a log. `scripts/memory-lint.sh` fails missing cites, needles that miss, and cites of README/lockfiles.
+- Major architectural decision (affects multiple modules or external systems) → ADR in `context/adr/` from the template, indexed in CONTEXT.md (markdown link is the cite; needle optional).
+- Real defects the critic or review found → confirm they're in `journal/lessons.md` (one line each): `- [NN] YYYY-MM-DD <defect> — <check> — cite:path needle:"token"`. Prefer an enforcing cite (`scripts/`, `*test*`, or a `verify.*` command). Lessons older than `limits.lesson_ttl_days` without one fail lint — promote or append `- DROPPED YYYY-MM-DD <defect>`. If nothing to distill, append or keep the sentinel `Lessons: none` (the line must exist either way).
 
 ## 5. Tracker sync (only if `tracker: github-issues`)
 
