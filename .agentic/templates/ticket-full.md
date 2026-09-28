@@ -6,7 +6,6 @@ template: full
 blocked_by: none
 branch: —
 claimed_by: ""
-network: ask          # none | ask | allow  (shell egress; curl|sh is always deny)
 reversibility: reversible   # reversible | expand-contract | irreversible
 rollback: n/a
 new_deps: []
@@ -23,7 +22,7 @@ scope_paths:
 - **Why now:**
 - **Success:**
 - **Constraint:**
-- **Out of scope:**
+- **Out of scope:** <one line; required>
 
 ## Request
 

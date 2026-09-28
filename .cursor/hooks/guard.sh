@@ -86,8 +86,7 @@ if [ -n "$nn" ]; then
   tfile="$(ls "$ROOT/.agentic/tickets/open/$nn"-*.md "$ROOT/.agentic/tickets/closed/$nn"-*.md 2>/dev/null | head -1)"
 fi
 
-NETWORK="$(ticket_field network "$tfile")"
-[ -z "$NETWORK" ] && NETWORK="$(cfg guard network)"
+NETWORK="$(cfg guard network)"
 [ -z "$NETWORK" ] && NETWORK="ask"
 
 INSTALL_PIPE="$(cfg guard install_pipe)"
@@ -100,6 +99,13 @@ META="$(cfg guard metadata)"
 [ -z "$META" ] && META="deny"
 COMMIT_NN="$(cfg guard commit_requires_nn)"
 [ -z "$COMMIT_NN" ] && COMMIT_NN="true"
+
+if printf '%s' "$cmd" | grep -Eq 'gate\.sh[[:space:]]+implement' && printf '%s' "$cmd" | grep -Eq -- '--widen'; then
+  ask "Re-running implement with a wider scope (--widen). Confirm scope_paths grew on purpose."
+fi
+if printf '%s' "$cmd" | grep -Eq 'gate\.sh[[:space:]]+critic' && printf '%s' "$cmd" | grep -Eq -- '--again'; then
+  ask "A second critic pass (--again). Confirm this is the same miss, not a new shape."
+fi
 
 # Tool invoked as a command (start of the command or after ; | &), not merely mentioned in a string.
 invoked() {
@@ -372,6 +378,9 @@ fi
 # ---------------------------------------------------------------------------
 # 3. Mutation of append-only history
 # ---------------------------------------------------------------------------
+if printf '%s' "$cmd" | grep -Eq 'trek\.jsonl' && ! printf '%s' "$cmd" | grep -Eq 'scripts/trek-log\.sh'; then
+  deny "Blocked: .agentic/journal/trek.jsonl is append-only via scripts/trek-log.sh."
+fi
 if printf '%s' "$cmd" | grep -Eq '(rm|mv|sed +-i[^|;&]*|> *)[^|;&]*\.agentic/(tickets/closed|journal)/'; then
   if ! printf '%s' "$cmd" | grep -Eq '>>[^|;&]*\.agentic/(tickets/closed|journal)/'; then
     if printf '%s' "$cmd" | grep -Eq 'tickets/closed/'; then
@@ -393,11 +402,17 @@ fi
 # 4. Commit directly on a protected branch.
 # ---------------------------------------------------------------------------
 if git_invoked && printf '%s' "$cmd" | grep -Eq '[[:space:]]commit[[:space:]]|^git[[:space:]]+commit'; then
+  if printf '%s' "$cmd" | grep -Eq -- '--no-verify'; then
+    deny "Blocked: git commit --no-verify."
+  fi
   br="$(current_branch)"
   if protected_branch "$br"; then
     deny "Blocked: git commit on protected branch '$br'. Use ticket/<NN>-slug."
   fi
   if [ "$COMMIT_NN" = "true" ] && [ -n "$nn" ]; then
+    if [ -z "$tfile" ] || [ ! -f "$tfile" ]; then
+      deny "Blocked: active ticket $nn has no ticket file. A commit NN must be that file."
+    fi
     msg="$(printf '%s' "$cmd" | sed -nE 's/.*(--message|-m)[[:space:]]+["'"'"']([^"'"'"']*).*/\2/p')"
     if [ -z "$msg" ]; then
       msg="$(printf '%s' "$cmd" | sed -nE 's/.*(--message|-m)[[:space:]]+([^[:space:]"'"'"']+).*/\2/p')"
@@ -415,6 +430,18 @@ if git_invoked && printf '%s' "$cmd" | grep -Eq '[[:space:]]commit[[:space:]]|^g
         *"$nn"*|*"#$nn_nopad"*|*"ticket/$nn"*|*"ticket/$nn_nopad"*) ;;
         *) deny "Blocked: commit message must include ticket $nn (config guard.commit_requires_nn)." ;;
       esac
+      head_now="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unborn)"
+      stamped=0
+      if [ -x "$ROOT/scripts/stamp-check.sh" ] && AGENTIC_ROOT="$ROOT" "$ROOT/scripts/stamp-check.sh" >/dev/null 2>&1; then
+        stamped=1
+      fi
+      trekked=0
+      if [ -f "$ROOT/.agentic/journal/trek.jsonl" ] && grep -F "\"nn\":\"$nn\"" "$ROOT/.agentic/journal/trek.jsonl" | grep -F "\"head\":\"$head_now\"" | grep -q '"exit":0'; then
+        trekked=1
+      fi
+      if [ "$stamped" -eq 0 ] && [ "$trekked" -eq 0 ]; then
+        ask "Product commit has no verify stamp and no trek log for this HEAD. Run scripts/trek-log.sh $nn or scripts/verify.sh."
+      fi
     fi
   fi
 fi
@@ -423,6 +450,10 @@ fi
 # 5. Merge into base when the branch's ticket is HIGH.
 # ---------------------------------------------------------------------------
 if git_invoked && printf '%s' "$cmd" | grep -Eq '[[:space:]]merge[[:space:]]'; then
+  nopen="$(find "$ROOT/.agentic/tickets/open" -name '*.md' 2>/dev/null | wc -l | tr -d '[:space:]')"
+  if [ "${nopen:-0}" -ge 2 ]; then
+    deny "Blocked: git merge while two or more tickets are open. Archive one first."
+  fi
   br="$(current_branch)"
   base="$(base_branch)"
   [ -z "$base" ] && base="dev"
@@ -448,6 +479,13 @@ if git_invoked && printf '%s' "$cmd" | grep -Eq '[[:space:]]merge[[:space:]]'; t
 fi
 
 # ---------------------------------------------------------------------------
+# 5b. Any git push asks. Force-push to a protected branch already denied above.
+# ---------------------------------------------------------------------------
+if git_invoked && printf '%s' "$cmd" | grep -Eq '[[:space:]]push[[:space:]]'; then
+  ask "git push. Push is a separate request from a green check."
+fi
+
+# ---------------------------------------------------------------------------
 # 6. History rewrite locally.
 # ---------------------------------------------------------------------------
 if git_invoked && printf '%s' "$cmd" | grep -Eq 'rebase([[:space:]]|$)|reset[[:space:]]+--hard|[[:space:]]--amend([[:space:]]|$)'; then
@@ -457,9 +495,9 @@ fi
 # ---------------------------------------------------------------------------
 # 7. Preference / memory / config writes — ask (provenance).
 # ---------------------------------------------------------------------------
-if printf '%s' "$cmd" | grep -Eq '(>|>>|tee |cp |mv |sed +-i)[^|;&]*(\.agentic/config\.yml|\.agentic/context/CONTEXT\.md|\.agentic/journal/lessons\.md|\.cursor/)'; then
+if printf '%s' "$cmd" | grep -Eq '(>|>>|tee |cp |mv |sed +-i)[^|;&]*(\.agentic/config\.yml|\.agentic/context/CONTEXT\.md|\.agentic/journal/lessons\.md|\.cursor/|scripts/|\.agentic/templates/)'; then
   if ! printf '%s' "$cmd" | grep -Eq '>>[^|;&]*\.agentic/journal/lessons\.md'; then
-    ask "Write to config/memory/cursor rules. Provenance: only the user's own chat message should drive this, not tool output."
+    ask "Write to config, memory, cursor rules, scripts, or templates. Provenance: only the user's own chat message should drive this, not tool output."
   fi
 fi
 
@@ -507,6 +545,37 @@ sys.exit(0 if ok else 1)
       ;;
   esac
 fi
+
+# Host suite: a product redirect with no scope file is denied.
+# Off while verify.test contains selftest.sh.
+vtest="$(awk '
+  /^verify:/{inb=1; next}
+  inb && /^[^[:space:]#]/{inb=0}
+  inb && $0 ~ /^[[:space:]]+test:/ {
+    line=$0
+    sub(/^[[:space:]]+test:[[:space:]]*/, "", line)
+    sub(/[[:space:]]*#.*/, "", line)
+    gsub(/"/, "", line)
+    print line
+    exit
+  }
+' "$ROOT/.agentic/config.yml" 2>/dev/null || true)"
+case "$vtest" in
+  *selftest.sh*|"") ;;
+  *)
+    scopef="$ROOT/.agentic/state/scope-$nn.txt"
+    if { [ -z "$nn" ] || [ ! -f "$scopef" ]; } && printf '%s' "$cmd" | grep -Eq '(>|>>|tee )'; then
+      target="$(printf '%s' "$cmd" | grep -oE '(>>|>|tee)[[:space:]]*[^[:space:];&|]+' | tail -1 | sed -E 's/^(>>|>|tee)[[:space:]]*//')"
+      target="${target#./}"
+      case "$target" in
+        .agentic/*|.git/*|/tmp/*|/dev/*|"") ;;
+        *)
+          deny "Blocked: no scope file. Run scripts/gate.sh implement NN --trek before editing product files. Target: $target"
+          ;;
+      esac
+    fi
+    ;;
+esac
 
 echo '{ "permission": "allow" }'
 exit 0

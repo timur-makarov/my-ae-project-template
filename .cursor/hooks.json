@@ -32,6 +32,12 @@
         "matcher": "WebFetch|WebSearch",
         "timeout": 10,
         "failClosed": true
+      },
+      {
+        "command": ".cursor/hooks/task-guard.sh",
+        "matcher": "Task",
+        "timeout": 10,
+        "failClosed": true
       }
     ],
     "beforeReadFile": [

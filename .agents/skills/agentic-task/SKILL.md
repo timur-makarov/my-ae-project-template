@@ -22,7 +22,7 @@ Apply the constitution's intent rules and record the results, not the ceremony:
 - Restatement (outcome, for whom, quality bar), kind classification, cause, small-words findings, problem-vs-mechanism check.
 - **Done Contract:** 1–3 testable assertions. If you can't write them, you don't understand the ask — `/agentic-interview`, don't invent checks.
 - Full tickets: fill the six-line Restate Contract (Out of scope required). Lite: one-line Out of scope.
-- Front matter: `reversibility`, `rollback`, `network`, `new_deps`. `irreversible` without a compensating rollback is EXPANDING.
+- Front matter: `reversibility`, `rollback`, `new_deps`. Network is `guard.network` in config, not a ticket field. `irreversible` without a compensating rollback is EXPANDING.
 
 ### 3. Price the risk → pick the template
 

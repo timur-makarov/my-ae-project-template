@@ -121,6 +121,12 @@ for f in "${FILES[@]}"; do
             ;;
         esac
         case "$bare" in
+          selftest.sh|scripts/selftest.sh|pytest|"pytest -q"|"npm test")
+            err "$f" "Check: '$bare' is the blanket suite — name the focused command"
+            continue
+            ;;
+        esac
+        case "$bare" in
           /*|*/*|scripts/*|make|make\ *|cargo\ *|pytest*|go\ test*|npm\ *|pnpm\ *|yarn\ *|bash\ *|true|/bin/true)
             ;;
           *)
@@ -201,17 +207,22 @@ for f in "${FILES[@]}"; do
         err "$f" "irreversible work is EXPANDING (must grill) unless already closed"
       fi
     fi
-    net="$(ticket_yaml "$f" network)"
-    case "$net" in
-      none|ask|allow|"") ;;
-      *) err "$f" "invalid network: '$net' (none|ask|allow)" ;;
-    esac
+    vb="$(grep -m1 -E '\*\*Verbatim:\*\*' "$f" || true)"
+    vb_val="$(printf '%s' "$vb" | sed -E 's/.*\*\*Verbatim:\*\*[[:space:]]*//; s/^["'"'"']//; s/["'"'"']$//; s/[[:space:]]*$//')"
+    if [ -z "$vb_val" ]; then
+      err "$f" "Verbatim is empty"
+    fi
     if [ "$template" = "full" ]; then
       grep -q '^\*\*Out of scope:\*\*\|^\\- \*\*Out of scope:\*\*' "$f" \
         || grep -q 'Out of scope:' "$f" \
         || err "$f" "full template missing Out of scope in the Restate Contract"
     else
       grep -qi 'Out of scope' "$f" || err "$f" "lite ticket missing Out of scope"
+    fi
+    oos="$(grep -m1 -i 'Out of scope' "$f" || true)"
+    oos_val="$(printf '%s' "$oos" | sed -E 's/.*[Oo]ut of scope:\**[[:space:]]*//; s/[`*"]//g; s/[[:space:]]*$//')"
+    if [ -z "$oos_val" ]; then
+      err "$f" "Out of scope is empty"
     fi
     title="$(grep -m1 '^# Ticket' "$f" || true)"
     case "$title" in

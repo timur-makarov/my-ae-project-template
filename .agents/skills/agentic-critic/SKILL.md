@@ -1,46 +1,42 @@
 ---
 name: agentic-critic
-description: "Use when a completed diff, diagnosis, or proposal needs an adversarial pass before it ships — typically dispatched as an isolated subagent at the end of implementation."
+description: "Use when a MEDIUM or HIGH ticket's diff needs an adversarial pass before it ships. The fast lane skips this hop."
 ---
 
-# Agentic Critic: Adversarial Red Team
+# Agentic Critic
 
-Evaluate work as a detached, hostile reviewer. You are paid to reject work containing a silent flaw or untested assumption — not to grade effort.
+Scripts already run the ticket's `Check:` commands and refuse a diff that leaves scope. Do not repeat those two facts. The job is to take each claim in the ticket and try to break it on the code that actually changed.
 
-## The seat
+The fast lane (LOW and `risk.low_fast_lane`) skips this hop. When the hop runs, the same agent writes the report. Do not spawn a subagent or another critic.
 
-1. **Evidence only.** Evaluate the files in the payload directory `gate.sh critic` assembled (package, verify stamp, contract excerpt, PREAMBLE). If any generator narrative or process diary reached you, ignore it — narrative seduces a reviewer into re-deriving the journey instead of testing the claim. The payload directory is read-only; do not mutate the tree.
-2. **Attack where it feels most solid.** Felt solidity marks the region never checked, because it felt solid. That circularity is invisible from inside the generator; you are the outside.
-3. **Size the attack to stakes** (Risk Tier in the ticket): MEDIUM → standard depth, executing the hostile inputs most likely to bite; HIGH → full protocol, every hostile row executed live with pasted output. Claims never checked by assertion — only by execution.
-4. **Precommit the kill condition** before attacking: the specific observable result that would force abandoning this diff/diagnosis. If you can't name one, you're rehearsing a defense, not testing.
+## Scope
 
-## Protocol
+The ticket's claims and the diff. For each claim, look at the branches, conditions, and error paths in the changed lines and try to name an input that claim fails on. Run it when the changed code can accept it.
 
-Fill `.agentic/templates/critic_report.md` → write to `.agentic/journal/<NN>-critic.md`:
+A finding is a line in the diff that does not do what the claim says, or a command that failed against that code. Cite the changed `file:line`, or the command and the fact that it failed. There is no cap on real misses.
 
-1. **Counterexample hunt.** Target every universal quantifier ("all/never/always") in ticket or diff. Execute the hostile set: null/empty/zero, boundary/max/duplicates, concurrency/timing/partial failure, unicode/malformed/metacharacters. Paste actual outputs — an unexecuted row is an unchecked row. Keep stable finding IDs (`F1`…). A repeated ID across two rounds is a convergence failure, not a new finding.
-2. **Rival-cause hunt** (diagnoses and performance claims). Enumerate ≥2 alternative causes producing the same symptoms; run the discriminating test that's true under the primary and false under rivals; paste output.
-3. **Consequence walk.** If the conclusion is true: what upstream preconditions must have held, what downstream postconditions must hold now, and did sibling callers of every modified function survive (grep them)? Check the cheapest implication in each direction.
-4. **Cold-read audit** (checklist in the template): scope traces to Done Contract, quoted outputs actually say what's claimed, original goal exercised end-to-end, no unasked abstraction, tests assert real behavior, guesses labeled.
-5. **Epicycle gate.** Count patches defending the central conclusion. ≥ `limits.epicycles_before_reopen` (config) → verdict `REOPEN_REQUIRED` regardless of anything else: a twice-patched conclusion is wrong at the root.
-6. **Metric honesty.** A number (ms, %, LCP, qps) without a pasted measurement command is `not measured`. Performance tickets cannot mark Attack 2 N/A.
-7. **Security fan-out** is a sibling persona, not you. If you are the general critic, do not also write `NN-critic-security.md`.
+## Out of scope
+
+- Files that are not in the diff and not in the fixtures the check already uses.
+- A demand that the author prove no future file can break the claim.
+- A second shape after a real miss has already been named.
+
+One sentence under `Not in this contract` is allowed. It does not set `CHANGES_REQUESTED` and it does not start another pass.
+
+## One report
+
+Write `.agentic/journal/<NN>-critic.md` from `.agentic/templates/critic_report.md`. Run `scripts/gate.sh critic <NN>` once to assemble the payload; it refuses a second payload if that report already exists. `scripts/gate.sh critic <NN> --again` asks.
+
+`scripts/artifact-lint.sh` rejects a finding that cites neither a changed `file:line` nor a command that was run and failed. `scripts/evidence-check.sh` still checks that the ticket's `Check:` commands appear in the action journal.
 
 ## Verdict
 
-`APPROVED` | `CHANGES_REQUESTED` (findings with file:line, severity, why it matters) | `REOPEN_REQUIRED` (root hypothesis wrong — say which observation killed it). Plus a deploy watchlist: the top decaying fact to watch after merge and the log line/metric that would signal failure.
-
-One line per real defect found also goes to `.agentic/journal/lessons.md`:
-`- [NN] YYYY-MM-DD <defect> — <the check that would have caught it earlier> — cite:path needle:"token"`
-Prefer `cite:` under `scripts/` or a test so the lesson survives `limits.lesson_ttl_days`.
+`APPROVED` when every claim you could try on the changed lines held. `CHANGES_REQUESTED` when a cited line or a failed command breaks a claim. `REOPEN_REQUIRED` when the claim's approach is wrong, not a line. Two patches defending one conclusion is the epicycle: reopen, don't patch again.
 
 ## Rationalizations
 
 | Excuse | Rebuttal |
 |---|---|
-| The hostile table is filled, verdict APPROVED | Shape ≠ execution. Every Command run must appear in `actions-*.jsonl`. Empty journal ⇒ critic cannot APPROVE. |
-| CI will catch it | Non-`ticket/*` branches skip `gate.sh pr`. No ticket branch, no merge. |
-| Same-model critic is fine (`inherit`) | Shared failure modes. Warn when critic == implementer and `models_allowed` lists another family. Don't hard-fail inherit. |
-| I'll skip the attacks that feel solid | Attack where it feels most solid — that region was never checked. |
-| The stamp is green so the contract holds | Stamp is one derivation. Hostile rows must have been run; paste the output. |
-| I'll Read `.env` to confirm the test | Secrets stay deny. Redact. |
+| The checks passed, so the claim holds | The scripts already ran the checks. Read the changed branches. |
+| I'll name a file that might exist later | A finding cites a changed line or a command that failed. |
+| One more shape, then I'm done | A real miss is already a finding. A second imagined shape is not another pass. |

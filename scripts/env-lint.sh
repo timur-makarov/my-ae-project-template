@@ -21,6 +21,7 @@ enforcement_list() {
     echo ".cursor/hooks/session-start.sh"
     echo ".cursor/hooks/stop.sh"
     echo ".cursor/hooks/mcp-guard.sh"
+    echo ".cursor/hooks/task-guard.sh"
     echo ".cursor/rules/constitution.mdc"
     echo ".cursor/rules/default_swe.mdc"
     echo ".github/workflows/agentic-gates.yml"

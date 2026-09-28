@@ -32,9 +32,9 @@ spark
  └── shipped work regressed                                → /agentic-postmortem
 ```
 
-LOW fast lane: skip critic and domain packs unless a glob above matches.
+LOW fast lane: skip critic and domain packs unless a glob above matches. That lane is `scripts/gate.sh implement NN --trek`. The same agent writes the code.
 
-If `craft_skills: false`, skip `/agentic-{ui,api,browser,security,perf,observe,migrate,ship,spec,source,debug,simplify}` and keep the spine only.
+If `craft_skills: false`, skip `/agentic-{ui,api,browser,security,perf,observe,migrate,spec,source,debug,simplify}` and keep the spine only.
 
 ## Rationalizations
 

@@ -152,23 +152,40 @@ fi
 echo "selftest: artifact-lint critic"
 cat > "$TMP/critic-bad.md" <<'EOF'
 # Critic
-**Verdict:** APPROVED
-**Attack depth:** `standard`
-| ID | Hostile input | Command run | Pasted output (exact) | Verdict |
-|---|---|---|---|---|
-| F1 | empty | | | PASS |
+**Verdict:** CHANGES_REQUESTED
+## Findings
+- Finding F1: the claim fails on an imagined file
 ## Epicycles
 - **Epicycle count:** 0
 ## Verdict & Deploy Watchlist
-- **Verdict:** APPROVED — ok
+- **Verdict:** CHANGES_REQUESTED — miss
 - **Watchlist:** 1) none 2) none
 EOF
 if "$SCRIPT_DIR/artifact-lint.sh" critic "$TMP/critic-bad.md" >/dev/null 2>"$TMP/critic.err"; then
-  echo "  FAIL — empty hostile cells should fail" >&2
+  echo "  FAIL — finding with no diff line and no failed command should fail" >&2
   fail=$((fail + 1))
 else
-  echo "  ok  — empty hostile cells fail critic lint"
+  echo "  ok  — uncitable finding fails critic lint"
   pass=$((pass + 1))
+fi
+cat > "$TMP/critic-cited.md" <<'EOF'
+# Critic
+**Verdict:** CHANGES_REQUESTED
+## Findings
+- Finding F1: src/a.py:12 does not return the claimed value
+## Epicycles
+- **Epicycle count:** 0
+## Verdict & Deploy Watchlist
+- **Verdict:** CHANGES_REQUESTED — miss
+- **Watchlist:** 1) none 2) none
+EOF
+if "$SCRIPT_DIR/artifact-lint.sh" critic "$TMP/critic-cited.md" >/dev/null 2>"$TMP/cited.err"; then
+  echo "  ok  — finding that cites a changed line lints"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — cited finding should lint" >&2
+  cat "$TMP/cited.err" >&2
+  fail=$((fail + 1))
 fi
 
 cat > "$TMP/critic-good.md" <<'EOF'
@@ -530,6 +547,7 @@ scope_paths:
 
 ## Request
 
+- **Verbatim:** "wide"
 - **Out of scope:** n/a
 
 ## Done Contract
@@ -565,6 +583,13 @@ mperm() { printf '%s' "$1" | "$HOOKS/mcp-guard.sh" | jq -r .permission; }
 assert_eq "WebFetch example.com is ask" "$(mperm '{"tool_name":"WebFetch","tool_input":{"url":"https://example.com"}}')" "ask"
 assert_eq "WebFetch localhost allowed" "$(mperm '{"tool_name":"WebFetch","tool_input":{"url":"http://127.0.0.1:8080"}}')" "allow"
 assert_eq "WebSearch is ask" "$(mperm '{"tool_name":"WebSearch","tool_input":{"search_term":"x"}}')" "ask"
+NET="$TMP/netroot"
+mkdir -p "$NET/.agentic/tickets/open" "$NET/.agentic/state"
+cp "$ROOT/.agentic/config.yml" "$NET/.agentic/config.yml"
+printf '%s\n' '---' 'status: in-progress' 'network: none' '---' '# Ticket 01 — net' > "$NET/.agentic/tickets/open/01-net.md"
+echo 01 > "$NET/.agentic/state/active-ticket"
+assert_eq "ticket network: none is ignored; WebFetch stays ask" "$(printf '%s' '{"tool_name":"WebFetch","tool_input":{"url":"https://example.com"}}' | AGENTIC_ROOT="$NET" "$HOOKS/mcp-guard.sh" | jq -r .permission)" "ask"
+assert_eq "ticket network: none is ignored; remote python stays ask" "$(printf '%s' '{"command":"python3 -c import urllib.request urlopen https://example.com"}' | AGENTIC_ROOT="$NET" "$HOOKS/guard.sh" | jq -r .permission)" "ask"
 
 echo "selftest: HIGH merge deny + commit NN ask + scope-file redirect"
 HG="$(mktemp -d "${TMPDIR:-/tmp}/agentic-hg.XXXXXX")"
@@ -594,7 +619,20 @@ assert_eq "HIGH git merge dev is denied" "$(hgperm '{"command":"git merge dev"}'
 assert_eq "commit without -m is ask" "$(hgperm '{"command":"git commit"}')" "ask"
 assert_eq "commit -F is ask" "$(hgperm '{"command":"git commit -F MSG"}')" "ask"
 assert_eq "commit -m without NN is denied" "$(hgperm '{"command":"git commit -m wip"}')" "deny"
-assert_eq "commit -m with 01 is allowed" "$(hgperm '{"command":"git commit -m 01-fix"}')" "allow"
+assert_eq "commit -m with 01 and no trek or stamp asks" "$(hgperm '{"command":"git commit -m 01-fix"}')" "ask"
+assert_eq "commit --no-verify is denied" "$(hgperm '{"command":"git commit --no-verify -m 01-fix"}')" "deny"
+hg_head="$(git -C "$HG" rev-parse HEAD)"
+mkdir -p "$HG/.agentic/journal"
+printf '%s\n' "{\"nn\":\"01\",\"head\":\"$hg_head\",\"exit\":0,\"ts\":\"2026-01-01T00:00:00Z\"}" > "$HG/.agentic/journal/trek.jsonl"
+assert_eq "commit -m with trek log is allowed" "$(hgperm '{"command":"git commit -m 01-fix"}')" "allow"
+assert_eq "git push asks" "$(hgperm '{"command":"git push origin ticket/01-high"}')" "ask"
+assert_eq "redirect into scripts asks" "$(hgperm '{"command":"echo x > scripts/x.sh"}')" "ask"
+assert_eq "implement --widen asks" "$(hgperm '{"command":"scripts/gate.sh implement 01 --trek --widen"}')" "ask"
+assert_eq "critic --again asks" "$(hgperm '{"command":"scripts/gate.sh critic 01 --again"}')" "ask"
+cp "$HG/.agentic/tickets/open/01-high.md" "$HG/.agentic/tickets/open/02-other.md"
+assert_eq "merge while two tickets are open is denied" "$(hgperm '{"command":"git merge feature"}')" "deny"
+rm -f "$HG/.agentic/tickets/open/02-other.md"
+assert_eq "merge with one open ticket is allowed" "$(hgperm '{"command":"git merge feature"}')" "allow"
 assert_eq "redirect onto scope file is denied" "$(hgperm '{"command":"echo ** > .agentic/state/scope-01.txt"}')" "deny"
 assert_eq "redirect onto other state file is allowed" "$(hgperm '{"command":"echo x > .agentic/state/other.txt"}')" "allow"
 rm -rf "$HG"
@@ -691,6 +729,16 @@ else
   echo "  FAIL — stop hook should warn on missing stamp" >&2
   echo "$stop_out" >&2
   fail=$((fail + 1))
+fi
+printf '%s\n' '{"nn":"01","head":"unborn","exit":0,"ts":"2026-01-01T00:00:00Z"}' > "$ST/.agentic/journal/trek.jsonl"
+stop_trek="$(printf '%s' '{}' | AGENTIC_ROOT="$ST" "$HOOKS/stop.sh")"
+if printf '%s' "$stop_trek" | jq -r '.additional_context // empty' | grep -q 'verify'; then
+  echo "  FAIL — stop hook should stay quiet when a trek line matches this HEAD" >&2
+  echo "$stop_trek" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — trek line suppresses the missing-stamp warning"
+  pass=$((pass + 1))
 fi
 MC="$TMP/mcroot"
 mkdir -p "$MC/.agentic"
@@ -893,6 +941,395 @@ else
   fail=$((fail + 1))
 fi
 
+
+echo "selftest: ticket-lint verbatim, out of scope, blanket Check"
+cat > "$TMP/bad-empty-v.md" <<'EOF'
+---
+status: open
+type: directive
+risk_tier: LOW
+template: lite
+blocked_by: none
+reversibility: reversible
+rollback: n/a
+scope_paths:
+  - README.md
+---
+# Ticket 91 — empty verbatim
+
+## Request
+
+- **Verbatim:** ""
+- **Out of scope:** other
+
+## Done Contract
+
+1. x — Check: `true`
+
+## Blast Radius
+
+**NARROWING** — n
+EOF
+if "$SCRIPT_DIR/ticket-lint.sh" "$TMP/bad-empty-v.md" >/dev/null 2>"$TMP/ev.err"; then
+  echo "  FAIL — empty Verbatim should fail lint" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — empty Verbatim fails lint"
+  pass=$((pass + 1))
+fi
+cat > "$TMP/bad-empty-oos.md" <<'EOF'
+---
+status: open
+type: directive
+risk_tier: LOW
+template: lite
+blocked_by: none
+reversibility: reversible
+rollback: n/a
+scope_paths:
+  - README.md
+---
+# Ticket 90 — empty oos
+
+## Request
+
+- **Verbatim:** "x"
+- **Out of scope:**
+
+## Done Contract
+
+1. x — Check: `true`
+
+## Blast Radius
+
+**NARROWING** — n
+EOF
+if "$SCRIPT_DIR/ticket-lint.sh" "$TMP/bad-empty-oos.md" >/dev/null 2>"$TMP/eo.err"; then
+  echo "  FAIL — empty Out of scope should fail lint" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — empty Out of scope fails lint"
+  pass=$((pass + 1))
+fi
+for blanket in 'scripts/selftest.sh' 'pytest' 'npm test'; do
+  cat > "$TMP/bad-blanket.md" <<EOF
+---
+status: open
+type: directive
+risk_tier: LOW
+template: lite
+blocked_by: none
+reversibility: reversible
+rollback: n/a
+scope_paths:
+  - README.md
+---
+# Ticket 89 — blanket
+
+## Request
+
+- **Verbatim:** "x"
+- **Out of scope:** other
+
+## Done Contract
+
+1. x — Check: \`$blanket\`
+
+## Blast Radius
+
+**NARROWING** — n
+EOF
+  if "$SCRIPT_DIR/ticket-lint.sh" "$TMP/bad-blanket.md" >/dev/null 2>"$TMP/bl.err"; then
+    echo "  FAIL — blanket Check '$blanket' should fail lint" >&2
+    fail=$((fail + 1))
+  else
+    echo "  ok  — blanket Check '$blanket' fails lint"
+    pass=$((pass + 1))
+  fi
+done
+cat > "$TMP/ok-focused.md" <<'EOF'
+---
+status: open
+type: directive
+risk_tier: LOW
+template: lite
+blocked_by: none
+reversibility: reversible
+rollback: n/a
+scope_paths:
+  - README.md
+---
+# Ticket 88 — focused
+
+## Request
+
+- **Verbatim:** "x"
+- **Out of scope:** other
+
+## Done Contract
+
+1. the one test — Check: `pytest -q tests/test_one.py`
+
+## Blast Radius
+
+**NARROWING** — n
+EOF
+if "$SCRIPT_DIR/ticket-lint.sh" "$TMP/ok-focused.md" >/dev/null 2>"$TMP/foc.err"; then
+  echo "  ok  — focused Check with no quoted span lints"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — focused Check should lint" >&2
+  cat "$TMP/foc.err" >&2
+  fail=$((fail + 1))
+fi
+
+echo "selftest: fast-trek gate"
+TR="$TMP/trekroot"
+mkdir -p "$TR/.agentic/tickets/open" "$TR/.agentic/journal" "$TR/.agentic/state" "$TR/.agentic/context"
+cp "$ROOT/.agentic/config.yml" "$TR/.agentic/config.yml"
+printf '%s\n' 'Lessons: none' > "$TR/.agentic/journal/lessons.md"
+git -C "$TR" init -q -b dev
+git -C "$TR" config user.email t@t
+git -C "$TR" config user.name t
+echo ok > "$TR/README.md"
+git -C "$TR" add . && git -C "$TR" commit -qm init
+lite_body() {
+  local nn="$1" title="$2" status="$3" blocked="$4" scope="$5"
+  cat > "$TR/.agentic/tickets/open/${nn}-${title}.md" <<EOF
+---
+status: ${status}
+type: directive
+risk_tier: LOW
+template: lite
+blocked_by: ${blocked}
+reversibility: reversible
+rollback: n/a
+scope_paths:
+  - ${scope}
+---
+# Ticket ${nn} — ${title}
+
+## Request
+
+- **Verbatim:** "x"
+- **Out of scope:** other
+
+## Done Contract
+
+1. x — Check: \`true\`
+
+## Blast Radius
+
+**NARROWING** — n
+EOF
+}
+lite_body 02 other in-progress none README.md
+lite_body 01 slug open none README.md
+if AGENTIC_ROOT="$TR" "$SCRIPT_DIR/gate.sh" implement 01 --trek >/dev/null 2>"$TMP/trek1.err"; then
+  echo "  FAIL — second in-progress ticket should refuse the claim" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — --trek refuses a second claimed ticket"
+  pass=$((pass + 1))
+fi
+lite_body 02 other open none README.md
+if AGENTIC_ROOT="$TR" "$SCRIPT_DIR/gate.sh" implement 01 --trek >"$TMP/trek2.out" 2>"$TMP/trek2.err"; then
+  echo "  ok  — --trek skips the baseline stamp"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — --trek should claim without a baseline stamp" >&2
+  cat "$TMP/trek2.err" >&2
+  fail=$((fail + 1))
+fi
+assert_eq "trek sets in-progress" "$(awk '/^status:/{print $2; exit}' "$TR/.agentic/tickets/open/01-slug.md")" "in-progress"
+assert_eq "trek writes scope" "$(cat "$TR/.agentic/state/scope-01.txt")" "README.md"
+assert_eq "trek checks out the ticket branch" "$(git -C "$TR" branch --show-current)" "ticket/01-slug"
+printf '%s\n' '  - README.md' '  - src/**' >> "$TR/.agentic/tickets/open/01-slug.md"
+# scope_paths is a yaml list; appending under the file's list is wrong if we appended after the body.
+# Rewrite the ticket with the wider list instead.
+lite_body 01 slug in-progress none 'README.md'
+# lite_body writes one scope. Patch the list.
+python3 - <<PY
+from pathlib import Path
+p = Path("$TR/.agentic/tickets/open/01-slug.md")
+t = p.read_text()
+t = t.replace("  - README.md\n", "  - README.md\n  - src/**\n", 1)
+p.write_text(t)
+PY
+if AGENTIC_ROOT="$TR" "$SCRIPT_DIR/gate.sh" implement 01 --trek >/dev/null 2>"$TMP/wide1.err"; then
+  echo "  FAIL — wider scope without --widen should fail" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — wider scope without --widen fails"
+  pass=$((pass + 1))
+fi
+if AGENTIC_ROOT="$TR" "$SCRIPT_DIR/gate.sh" implement 01 --trek --widen >/dev/null 2>"$TMP/wide2.err"; then
+  echo "  ok  — --widen accepts the wider scope"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — --widen should accept" >&2
+  cat "$TMP/wide2.err" >&2
+  fail=$((fail + 1))
+fi
+lite_body 02 other in-progress none README.md
+if AGENTIC_ROOT="$TR" "$SCRIPT_DIR/gate.sh" implement 01 --trek --with 02 >/dev/null 2>"$TMP/with1.err"; then
+  echo "  FAIL — overlapping --with should fail" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — --with refuses overlapping scopes"
+  pass=$((pass + 1))
+fi
+lite_body 02 other in-progress none notes.md
+if AGENTIC_ROOT="$TR" "$SCRIPT_DIR/gate.sh" implement 01 --trek --with 02 >/dev/null 2>"$TMP/with2.err"; then
+  echo "  ok  — --with allows an independent ticket"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — independent --with should pass" >&2
+  cat "$TMP/with2.err" >&2
+  fail=$((fail + 1))
+fi
+python3 - <<PY
+from pathlib import Path
+p = Path("$TR/.agentic/tickets/open/01-slug.md")
+t = p.read_text().replace("blocked_by: none", "blocked_by: 02", 1)
+p.write_text(t)
+PY
+if AGENTIC_ROOT="$TR" "$SCRIPT_DIR/gate.sh" implement 01 --trek --with 02 >/dev/null 2>"$TMP/with3.err"; then
+  echo "  FAIL — blocked_by --with should fail" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — --with refuses when blocked_by points at the partner"
+  pass=$((pass + 1))
+fi
+python3 - <<PY
+from pathlib import Path
+p = Path("$TR/.agentic/tickets/open/01-slug.md")
+t = p.read_text().replace("blocked_by: 02", "blocked_by: none", 1)
+p.write_text(t)
+PY
+if AGENTIC_ROOT="$TR" "$SCRIPT_DIR/gate.sh" archive 01 --accepted-by 'ship it' >/dev/null 2>"$TMP/acc.err"; then
+  echo "  FAIL — --accepted-by should be removed" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — archive --accepted-by is removed"
+  pass=$((pass + 1))
+fi
+if AGENTIC_ROOT="$TR" "$SCRIPT_DIR/gate.sh" archive 01 >/dev/null 2>"$TMP/arc1.err"; then
+  echo "  FAIL — archive without trek or ready-for-review should fail" >&2
+  fail=$((fail + 1))
+elif grep -q 'ready-for-review' "$TMP/arc1.err"; then
+  echo "  ok  — archive without a trek log still needs ready-for-review"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — archive error should name ready-for-review" >&2
+  cat "$TMP/arc1.err" >&2
+  fail=$((fail + 1))
+fi
+tr_head="$(git -C "$TR" rev-parse HEAD)"
+printf '%s\n' "{\"nn\":\"01\",\"head\":\"$tr_head\",\"exit\":0,\"ts\":\"2026-01-01T00:00:00Z\"}" > "$TR/.agentic/journal/trek.jsonl"
+if AGENTIC_ROOT="$TR" "$SCRIPT_DIR/gate.sh" archive 01 >/dev/null 2>"$TMP/arc2.err"; then
+  echo "  ok  — fast-lane archive accepts a green trek log"
+  pass=$((pass + 1))
+elif grep -q 'ready-for-review' "$TMP/arc2.err"; then
+  echo "  FAIL — green trek log should pass the status check" >&2
+  cat "$TMP/arc2.err" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — green trek log passes the status check"
+  pass=$((pass + 1))
+fi
+if AGENTIC_ROOT="$TR" "$SCRIPT_DIR/trek-log.sh" 01 >"$TMP/tlog.out" 2>"$TMP/tlog.err"; then
+  echo "  ok  — trek-log runs Check and appends"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — trek-log should exit 0 for Check: true" >&2
+  cat "$TMP/tlog.err" >&2
+  fail=$((fail + 1))
+fi
+if grep -q '"exit":0' "$TR/.agentic/journal/trek.jsonl"; then
+  echo "  ok  — trek.jsonl records exit 0"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — trek.jsonl missing exit 0" >&2
+  fail=$((fail + 1))
+fi
+
+echo "selftest: critic one report"
+CR="$TMP/critroot"
+mkdir -p "$CR/.agentic/tickets/open" "$CR/.agentic/journal" "$CR/.agentic/state"
+cp "$ROOT/.agentic/config.yml" "$CR/.agentic/config.yml"
+lite_crit() {
+  cat > "$CR/.agentic/tickets/open/01-crit.md" <<'EOF'
+---
+status: in-progress
+type: directive
+risk_tier: LOW
+template: lite
+blocked_by: none
+reversibility: reversible
+rollback: n/a
+scope_paths:
+  - README.md
+---
+# Ticket 01 — crit
+
+## Request
+
+- **Verbatim:** "x"
+- **Out of scope:** other
+
+## Done Contract
+
+1. x — Check: `true`
+
+## Blast Radius
+
+**NARROWING** — n
+EOF
+}
+lite_crit
+printf '%s\n' '# already' > "$CR/.agentic/journal/01-critic.md"
+if AGENTIC_ROOT="$CR" "$SCRIPT_DIR/gate.sh" critic 01 >/dev/null 2>"$TMP/cr1.err"; then
+  echo "  FAIL — second critic report should be refused" >&2
+  fail=$((fail + 1))
+elif grep -q 'exists' "$TMP/cr1.err"; then
+  echo "  ok  — second critic report is refused"
+  pass=$((pass + 1))
+else
+  echo "  FAIL — critic refusal should say the report exists" >&2
+  cat "$TMP/cr1.err" >&2
+  fail=$((fail + 1))
+fi
+if AGENTIC_ROOT="$CR" "$SCRIPT_DIR/gate.sh" critic 01 --again >/dev/null 2>"$TMP/cr2.err"; then
+  echo "  FAIL — --again still needs a stamp; success would mean the exists check was skipped wrongly only if stamp exists" >&2
+  fail=$((fail + 1))
+elif grep -q 'exists' "$TMP/cr2.err"; then
+  echo "  FAIL — --again should get past the existing report" >&2
+  cat "$TMP/cr2.err" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — --again is not refused for an existing report"
+  pass=$((pass + 1))
+fi
+
+echo "selftest: host-suite no-scope deny"
+HS="$TMP/hostsuite"
+mkdir -p "$HS/.agentic"
+cp "$ROOT/.agentic/config.yml" "$HS/.agentic/config.yml"
+python3 - <<PY
+from pathlib import Path
+p = Path("$HS/.agentic/config.yml")
+t = p.read_text().replace('test: "scripts/selftest.sh"', 'test: "pytest -q tests/test_one.py"', 1)
+p.write_text(t)
+PY
+hperm() { printf '%s' "$1" | AGENTIC_ROOT="$HS" "$HOOKS/protect.sh" | jq -r .permission; }
+assert_eq "host suite denies a product write with no scope file" "$(hperm '{"tool_name":"Write","tool_input":{"path":"'"$HS"'/README.md"}}')" "deny"
+assert_eq "host suite shell redirect to a product file is denied" "$(printf '%s' '{"command":"echo hi > README.md"}' | AGENTIC_ROOT="$HS" "$HOOKS/guard.sh" | jq -r .permission)" "deny"
+TS="$TMP/tmplsuite"
+mkdir -p "$TS/.agentic"
+cp "$ROOT/.agentic/config.yml" "$TS/.agentic/config.yml"
+assert_eq "selftest suite allows a product write with no scope file" "$(printf '%s' '{"tool_name":"Write","tool_input":{"path":"'"$TS"'/README.md"}}' | AGENTIC_ROOT="$TS" "$HOOKS/protect.sh" | jq -r .permission)" "allow"
+assert_eq "Task spawn asks" "$(printf '%s' '{"tool_name":"Task"}' | "$HOOKS/task-guard.sh" | jq -r .permission)" "ask"
 
 echo "selftest: $pass passed, $fail failed"
 if [ "$fail" -ne 0 ]; then

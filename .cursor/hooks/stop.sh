@@ -18,7 +18,18 @@ elif [ -x "$here/../../scripts/stamp-check.sh" ]; then
 fi
 
 warn=""
-if [ -f "$ROOT/.agentic/state/active-ticket" ]; then
+trek_ok=0
+if [ -f "$ROOT/.agentic/state/active-ticket" ] && [ -f "$ROOT/.agentic/journal/trek.jsonl" ]; then
+  nn="$(tr -d '[:space:]' < "$ROOT/.agentic/state/active-ticket")"
+  head="unborn"
+  if command -v git >/dev/null 2>&1; then
+    head="$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unborn)"
+  fi
+  if grep -F "\"nn\":\"$nn\"" "$ROOT/.agentic/journal/trek.jsonl" | grep -F "\"head\":\"$head\"" | grep -q '"exit":0'; then
+    trek_ok=1
+  fi
+fi
+if [ "$trek_ok" -eq 0 ] && [ -f "$ROOT/.agentic/state/active-ticket" ]; then
   if [ -n "$stamp" ]; then
     if ! AGENTIC_ROOT="$ROOT" "$stamp" >/dev/null 2>&1; then
       warn="Active ticket has no fresh green verify stamp for this HEAD. Run scripts/verify.sh before claiming done. (stop hook observe-only; not a follow-up loop.)"

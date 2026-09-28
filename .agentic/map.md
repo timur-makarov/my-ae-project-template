@@ -9,7 +9,7 @@
 
 - **Spine:** `/agentic-route`, `/agentic-init`, `/agentic-task`, `/agentic-grill`, `/agentic-implement`, `/agentic-critic`, `/agentic-pr`, `/agentic-archive`, `/agentic-status`, `/agentic-handoff`, `/agentic-postmortem`.
 - **Intake:** `/agentic-idea`, `/agentic-interview`, `/agentic-spec`.
-- **Craft (when `craft_skills: true`):** `/agentic-debug`, `/agentic-source`, `/agentic-browser`, `/agentic-api`, `/agentic-ui`, `/agentic-security`, `/agentic-perf`, `/agentic-observe`, `/agentic-migrate`, `/agentic-ship`, `/agentic-simplify`.
+- **Craft (when `craft_skills: true`):** `/agentic-debug`, `/agentic-source`, `/agentic-browser`, `/agentic-api`, `/agentic-ui`, `/agentic-security`, `/agentic-perf`, `/agentic-observe`, `/agentic-migrate`, `/agentic-simplify`.
 - **Domain context:** `.agentic/context/CONTEXT.md`.
 - **Core invariant:** every ticket satisfies its Done Contract and the standing DoD, passes `scripts/verify.sh` with a fresh stamp, floor-guard, and — for MEDIUM/HIGH — an isolated critic (plus security fan-out on HIGH `risk_paths`) before closing. Stage transitions go through `scripts/gate.sh`.
 

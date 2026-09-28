@@ -2,10 +2,10 @@
 # gate.sh — stage-transition spine. Each stage is a hard precondition check.
 #
 # Usage:
-#   scripts/gate.sh implement NN
-#   scripts/gate.sh critic NN
+#   scripts/gate.sh implement NN [--trek] [--with MM] [--widen]
+#   scripts/gate.sh critic NN [--again]
 #   scripts/gate.sh pr NN [pr-body-file]
-#   scripts/gate.sh archive NN [--accepted-by "verbatim human words"]
+#   scripts/gate.sh archive NN
 #
 # Protocol: GATE, TICKET, STATUS, plus stage-specific KEY: value lines.
 # Every invocation appends one line to .agentic/journal/metrics.jsonl.
@@ -18,8 +18,34 @@ STAGE="${1:-}"
 NN_RAW="${2:-}"
 shift 2 2>/dev/null || true
 
+TREK=0
+WIDEN=0
+AGAIN=0
+WITH=""
+PR_BODY=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --trek) TREK=1; shift ;;
+    --widen) WIDEN=1; shift ;;
+    --again) AGAIN=1; shift ;;
+    --with)
+      WITH="${2:-}"
+      [ -n "$WITH" ] || { echo "gate: --with needs a ticket number" >&2; exit 2; }
+      shift 2
+      ;;
+    --accepted-by)
+      echo "gate: --accepted-by is removed. Archive a ready-for-review ticket, or a fast-lane ticket whose trek log exited 0 for this HEAD." >&2
+      exit 2
+      ;;
+    *)
+      PR_BODY="$1"
+      shift
+      ;;
+  esac
+done
+
 if [ -z "$STAGE" ] || [ -z "$NN_RAW" ]; then
-  echo "usage: scripts/gate.sh implement|critic|pr|archive NN" >&2
+  echo "usage: scripts/gate.sh implement|critic|pr|archive NN [--trek] [--with MM] [--widen] [--again]" >&2
   exit 2
 fi
 
@@ -81,6 +107,116 @@ session_traps() {
         ;;
     esac
   done < <(env | awk -F= '/_API_KEY=/{print $1}')
+}
+
+scopes_hit() {
+  local a="$1" b="$2" pa pb
+  [ "$a" = "$b" ] && return 0
+  pa="${a%%\**}"; pb="${b%%\**}"
+  pa="${pa%/}"; pb="${pb%/}"
+  [ -z "$pa" ] || [ -z "$pb" ] && return 0
+  case "$pa" in
+    "$pb"|"$pb"/*) return 0 ;;
+  esac
+  case "$pb" in
+    "$pa"|"$pa"/*) return 0 ;;
+  esac
+  return 1
+}
+
+single_active() {
+  local f id st partner=""
+  [ -n "$WITH" ] && partner="$(nn_pad "$WITH")"
+  for f in "$TICKETS_OPEN"/*.md; do
+    [ -f "$f" ] || continue
+    id="$(basename "$f" | sed -E 's/-.*//')"
+    [ "$id" = "$NN" ] && continue
+    [ -n "$partner" ] && [ "$id" = "$partner" ] && continue
+    st="$(ticket_yaml "$f" status)"
+    case "$st" in
+      in-progress|ready-for-review)
+        fail "ticket $id is $st — archive it before claiming $NN (or pass --with $id when neither blocked_by points at the other and scopes do not overlap)"
+        ;;
+    esac
+  done
+}
+
+with_ok() {
+  [ -n "$WITH" ] || return 0
+  local other ofile bb ob a b
+  other="$(nn_pad "$WITH")"
+  [ "$other" != "$NN" ] || fail "--with cannot name the same ticket"
+  ofile="$(ticket_file "$other" || true)"
+  [ -n "$ofile" ] || fail "--with $other: ticket not found"
+  bb="$(ticket_yaml "$TICKET" blocked_by)"
+  ob="$(ticket_yaml "$ofile" blocked_by)"
+  case "$bb" in
+    *"$other"*) fail "ticket $NN blocked_by points at $other" ;;
+  esac
+  case "$ob" in
+    *"$NN"*) fail "ticket $other blocked_by points at $NN" ;;
+  esac
+  while IFS= read -r a; do
+    [ -z "$a" ] && continue
+    while IFS= read -r b; do
+      [ -z "$b" ] && continue
+      if scopes_hit "$a" "$b"; then
+        fail "scope overlap between $NN ($a) and $other ($b)"
+      fi
+    done < <(ticket_yaml_list "$ofile" scope_paths)
+  done < <(ticket_yaml_list "$TICKET" scope_paths)
+}
+
+scope_widen() {
+  local old="$STATE/scope-$NN.txt" g
+  [ -f "$old" ] && [ -s "$old" ] || return 0
+  while IFS= read -r g; do
+    [ -z "$g" ] && continue
+    if ! grep -Fxq -- "$g" "$old"; then
+      if [ "$WIDEN" -eq 1 ]; then
+        return 0
+      fi
+      fail "scope widens past the frozen file; re-run: scripts/gate.sh implement $NN --trek --widen"
+    fi
+  done < <(ticket_yaml_list "$TICKET" scope_paths)
+}
+
+checkout_ticket_branch() {
+  [ "$TREK" -eq 1 ] || return 0
+  has_git || return 0
+  local prefix slug base branch
+  prefix="$(config_get branch_prefix)"
+  [ -z "$prefix" ] && prefix="ticket/"
+  slug="$(basename "$TICKET" | sed -E "s/^${NN}-//; s/\.md$//")"
+  branch="${prefix}${NN}-${slug}"
+  base="$(base_branch)"
+  [ -z "$base" ] && base="dev"
+  if git -C "$ROOT" rev-parse --verify "$branch" >/dev/null 2>&1; then
+    git -C "$ROOT" checkout "$branch" >/dev/null || fail "could not check out $branch"
+  elif git -C "$ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
+    git -C "$ROOT" checkout -B "$branch" "$base" >/dev/null || fail "could not check out $branch from $base"
+  else
+    git -C "$ROOT" checkout -B "$branch" >/dev/null || fail "could not check out $branch"
+  fi
+  protocol BRANCH "$branch"
+}
+
+set_in_progress() {
+  [ "$STATUS" = "in-progress" ] && return 0
+  local tmp
+  tmp="$(mktemp)"
+  awk 'BEGIN{done=0} /^status:[[:space:]]*/ && !done { print "status: in-progress"; done=1; next } { print }' "$TICKET" > "$tmp"     || fail "could not set status in-progress"
+  mv "$tmp" "$TICKET"
+  STATUS="in-progress"
+  protocol STATUS_SET in-progress
+}
+
+trek_log_ok() {
+  local f head
+  f="$JOURNAL/trek.jsonl"
+  [ -f "$f" ] || return 1
+  head="$(current_head)"
+  grep -F "\"nn\":\"$NN\"" "$f" | grep -F "\"head\":\"$head\"" | grep -q '"exit":0'
 }
 
 claim_lock() {
@@ -388,19 +524,28 @@ stage_implement() {
     open|in-progress) ;;
     *) fail "status '$STATUS' is not implementable" ;;
   esac
+  single_active
+  with_ok
+  scope_widen
   claim_lock
   handoff_stale
   session_traps
   write_scope
-  require_worktree
-  require_baseline_stamp
-  "$SCRIPT_DIR/model-check.sh" >/dev/null || fail "model-check failed"
+  if [ "$TREK" -eq 1 ]; then
+    checkout_ticket_branch
+    set_in_progress
+  else
+    require_worktree
+    require_baseline_stamp
+    "$SCRIPT_DIR/model-check.sh" >/dev/null || fail "model-check failed"
+  fi
 }
 
 stage_critic() {
   require_ticket_lint
-  [ -f "$JOURNAL/$NN-ledger.md" ] || fail "ledger missing ($JOURNAL/$NN-ledger.md)"
-  "$SCRIPT_DIR/artifact-lint.sh" ledger "$JOURNAL/$NN-ledger.md" "$NN" || fail "ledger lint failed"
+  if [ -f "$JOURNAL/$NN-critic.md" ] && [ "$AGAIN" != 1 ]; then
+    fail "critic report exists ($JOURNAL/$NN-critic.md). A second pass is: scripts/gate.sh critic $NN --again"
+  fi
   require_fresh_stamp
   assemble_critic_payload
   "$SCRIPT_DIR/evidence-check.sh" "$NN" || fail "evidence-check failed"
@@ -453,17 +598,14 @@ stage_pr() {
 }
 
 stage_archive() {
-  local accepted=""
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --accepted-by) accepted="$2"; shift 2 ;;
-      *) shift ;;
-    esac
-  done
-  if [ "$STATUS" != "ready-for-review" ] && [ -z "$accepted" ]; then
-    fail "status is '$STATUS' (need ready-for-review, or --accepted-by \"<verbatim human words>\")"
+  if [ "$STATUS" != "ready-for-review" ] && ! trek_log_ok; then
+    fail "status is '$STATUS' (need ready-for-review, or a trek log with exit 0 for this HEAD)"
   fi
-  stage_pr
+  if [ "$TIER" = "LOW" ] && trek_log_ok; then
+    require_ticket_lint
+  else
+    stage_pr "$PR_BODY"
+  fi
   done_contract_checked
   dod_checked
   if ! grep -qE 'Lessons: none|^- \[' "$JOURNAL/lessons.md" 2>/dev/null; then
@@ -476,7 +618,6 @@ stage_archive() {
     echo "nn=$NN"
     echo "ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo "head=$(current_head)"
-    [ -n "$accepted" ] && echo "accepted_by=$accepted"
   } > "$token"
   protocol CLOSE_TOKEN "$token"
 }
@@ -484,7 +625,7 @@ stage_archive() {
 case "$STAGE" in
   implement) stage_implement; finish 0 ;;
   critic) stage_critic; finish 0 ;;
-  pr) stage_pr "$@"; finish 0 ;;
-  archive) stage_archive "$@"; finish 0 ;;
+  pr) stage_pr "$PR_BODY"; finish 0 ;;
+  archive) stage_archive; finish 0 ;;
   *) echo "unknown stage '$STAGE'" >&2; exit 2 ;;
 esac

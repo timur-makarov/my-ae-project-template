@@ -26,7 +26,7 @@
 
 - Enforcement layer: `.cursor/`, `scripts/`, templates, `config.yml`, GitHub workflow. cite:scripts/env-lint.sh needle:"enforcement"
 - Host auth, payments, migrations (see `risk_paths`). cite:.agentic/config.yml needle:"risk_paths"
-- Remote fetch and new dependencies (ticket `network` / `new_deps`). cite:.agentic/config.yml needle:"new_deps"
+- Remote fetch is `guard.network` in config. New dependencies stay on the ticket (`new_deps`). cite:.agentic/config.yml needle:"new_deps"
 
 ## ADR Index
 

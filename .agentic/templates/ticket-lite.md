@@ -6,7 +6,6 @@ template: lite
 blocked_by: none
 branch: —
 claimed_by: ""
-network: ask
 reversibility: reversible
 rollback: n/a
 new_deps: []

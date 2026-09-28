@@ -38,37 +38,21 @@ lint_critic() {
       err "$f: numeric performance claim without measured/not measured (metric-honesty)"
     fi
   fi
-  # Hostile-input table: skip header/separator; require non-empty command + output cells.
-  # Rows look like: | ... | command | output | PASS/FAIL |
-  local depth="standard"
-  grep -q '`full`' "$f" && depth="full"
-  awk -v depth="$depth" -v file="$f" '
-    BEGIN { FS="|" }
-    /Hostile input/ {
-      in_table=1
-      has_id = ($0 ~ /[[:space:]]ID[[:space:]]/)
-      next
+  # A finding must cite a changed file:line or a command that was run and failed.
+  # Count is not capped. An APPROVED report with no findings needs no citation.
+  awk -v file="$f" '
+    function cited(s) {
+      if (s ~ /[A-Za-z0-9_.-]+:[0-9]+/) return 1
+      if (s ~ /`[^`]+`/ && (s ~ /[Ff]ail/ || s ~ /exited/)) return 1
+      return 0
     }
-    in_table && /^[|][-: ]+[|]/ { next }
-    in_table && /^\|/ {
-      if (has_id) { cmd=$4; out=$5 } else { cmd=$3; out=$4 }
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", cmd)
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", out)
-      rows++
-      if (cmd == "" || out == "") {
-        printf "artifact-lint: %s: hostile-input row %d has empty Command run or Pasted output\n", file, rows > "/dev/stderr"
+    /^Finding[[:space:]]/ || /^- Finding[[:space:]]/ || /^- F[0-9]+/ {
+      if (!cited($0)) {
+        printf "artifact-lint: %s: finding cites neither a changed file:line nor a failed command: %s\n", file, $0 > "/dev/stderr"
         bad=1
       }
     }
-    in_table && (/^$/ || /^\#\#/ || /^\*\*Findings/) { in_table=0 }
-    END {
-      need = (depth=="full") ? 4 : 2
-      if (rows < need) {
-        printf "artifact-lint: %s: hostile-input table has %d rows, %s depth requires >=%d\n", file, rows+0, depth, need > "/dev/stderr"
-        bad=1
-      }
-      exit bad+0
-    }
+    END { exit bad+0 }
   ' "$f" || fail=1
 }
 

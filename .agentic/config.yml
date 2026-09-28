@@ -65,8 +65,9 @@ craft_skills: true
 critic:
   fanout: true
 
-# Ticket front matter may override network / new_deps.
-# Pipe-to-interpreter is always deny regardless of network:.
+# Network is config-only. A ticket network: field is ignored.
+# Pipe-to-interpreter is always deny. Localhost stays allow.
+# new_deps stays on the ticket.
 guard:
   network: ask
   install_pipe: deny

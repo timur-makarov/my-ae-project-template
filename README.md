@@ -22,7 +22,7 @@ spark
 
 `/agentic-route` is the map. `/agentic-status` anytime. `/agentic-handoff` mid-ticket. `/agentic-postmortem` when shipped work breaks.
 
-LOW tickets skip the critic. Humans sit **on** the loop (expansion, HIGH merge, irreversible work), not between every slice. Every autonomous stretch still ends on a verify **stamp**.
+LOW tickets skip the critic. The fast lane is `scripts/gate.sh implement NN --trek`, and the same agent writes the code. Humans sit **on** the loop (expansion, HIGH merge, irreversible work), not between every slice. A LOW ticket can close on a green `scripts/trek-log.sh` line for this HEAD. MEDIUM and HIGH still stamp, then critic, then pr.
 
 If a change is not reversible, the ticket says `reversibility: irreversible` with a compensating `rollback:` — and that is EXPANDING, so it grills first.
 
@@ -36,17 +36,23 @@ A script or hook can **deny**, **ask**, or **exit non-zero**. Skills and the con
 |---|---|
 | `curl\|sh`, `wget\|bash`, `bash <(curl)`, `eval "$(curl …)"`, `curl -o install.sh`, `./install.sh` outside `scripts/`, `base64\|sh` | deny |
 | Cloud metadata (`169.254.169.254`, GCP, `fd00:ec2::254`) | deny |
-| curl/wget/nc/ssh **and** interpreter HTTP (`python`/`node` urllib\|fetch) | ticket/config `network:` (default ask; localhost allow) |
+| curl/wget/nc/ssh **and** interpreter HTTP (`python`/`node` urllib\|fetch) | config `guard.network` (default ask; localhost allow). Ticket `network:` is ignored |
 | Package install not listed in ticket `new_deps:` | ask / deny (`guard.new_deps`) |
 | `--privileged`, `--network=host`, `chmod 777`, mkfs, `dd of=/dev/` | deny |
 | sudo/su, crontab/launchctl, redirect into `.env`/keys, `~/.ssh` | ask |
 | Force-push or `git commit` on `main`/`master`/`dev`/`base_branch` | deny |
 | HIGH merge into `base_branch` | deny (`risk.high_requires_human_merge`) |
-| `git commit -m` without ticket `NN` | deny; no inspectable `-m` (HEREDOC/`-F`) → ask |
+| `git merge` while two or more files are in `tickets/open/` | deny |
+| `git push` | ask |
+| `git commit --no-verify` | deny |
+| `git commit -m` without ticket `NN`, or NN with no ticket file | deny; no inspectable `-m` (HEREDOC/`-F`) → ask |
+| Product commit with no trek line and no verify stamp for this HEAD | ask |
 | Mutate `tickets/closed/` without `gate.sh archive` token; rewrite journal | deny |
 | Redirect onto `scope-*.txt`, or outside frozen `scope_paths` | deny |
 | rebase, `--amend`, `reset --hard`, `rm -rf` (non-scratch), `git clean -f` | ask |
-| Shell write to `config.yml` / `CONTEXT.md` / `lessons.md` / `.cursor/` | ask |
+| Shell write to `config.yml` / `CONTEXT.md` / `lessons.md` / `.cursor/` / `scripts/` / templates | ask |
+| `gate.sh implement --widen` or `gate.sh critic --again` | ask |
+| Spawning a subagent (Task) | ask |
 | `kill` / `pkill` | ask |
 
 ### File tools + fetch — `protect.sh`, `mcp-guard.sh` (failClosed)
@@ -59,8 +65,8 @@ A script or hook can **deny**, **ask**, or **exit non-zero**. Skills and the con
 | File-tool rewrite of `scope-*.txt` | deny (`gate.sh implement` owns it) |
 | `tickets/closed/`, journal JSONL | deny |
 | Writes outside frozen `scope_paths` (active ticket) | deny |
-| No ticket and `scope.strict: true` | deny all file-tool edits (template ships **false**; `/agentic-init` flips it) |
-| WebFetch / WebSearch / MCP | same `network:` budget as curl |
+| No scope file, and `verify.test` is a host command (not `selftest.sh`) | deny product writes. Off while `verify.test` contains `selftest.sh`. Init leaves `scope.strict` false |
+| WebFetch / WebSearch / MCP | config `guard.network` (same as curl). Ticket `network:` is ignored |
 
 `audit.sh` appends every shell command to `actions-*.jsonl` (fails open if jq is missing). EditNotebook is on the write matcher.
 
@@ -78,7 +84,8 @@ A script or hook can **deny**, **ask**, or **exit non-zero**. Skills and the con
 | No baseline verify stamp; later critic/pr without a fresh green stamp for this HEAD | `stamp-check.sh` |
 | Optional: implement from a linked worktree | `limits.require_worktree` (shipped false) |
 | MEDIUM/HIGH critic: ledger, evidence-only payload, last verdict `APPROVED` | `gate.sh critic` / `pr` + `artifact-lint.sh` |
-| MEDIUM/HIGH `directive`/`diagnosis`: nonempty `actions-*.jsonl`; each hostile **Command run** must appear in it | `evidence-check.sh` (`limits.tdd_required`) |
+| MEDIUM/HIGH: ticket `Check:` commands appear in `actions-*.jsonl` | `evidence-check.sh` |
+| Critic finding cites neither a changed `file:line` nor a failed command | `artifact-lint.sh` rejects it. One report; a second `gate.sh critic` without `--again` fails |
 | Quoted `scripts/`/`pytest`/… in reports must appear in the journal; RED before GREEN (skipped while `verify.test` is `selftest.sh`) | `evidence-check.sh` |
 | HIGH diff hitting a HIGH `risk_paths` glob | `NN-critic-security.md` APPROVED (`critic.fanout`) |
 | Diff floor above ticket tier; test-count drop without a Ruling; leftover ASSUMED rows | `gate.sh pr` |
@@ -96,7 +103,7 @@ A script or hook can **deny**, **ask**, or **exit non-zero**. Skills and the con
 
 | Condition | What happens |
 |---|---|
-| Active ticket, no fresh green stamp | `stop` hook warns (`loop_limit: 0`, no follow-up loop) |
+| Active ticket, no fresh green stamp and no trek line for this HEAD | `stop` hook warns (`loop_limit: 0`, no follow-up loop) |
 | `scope.strict: false` and `verify.test` still `selftest.sh` | sessionStart: run `/agentic-init` |
 | `models.critic == models.implementer` and `models_allowed` lists another family | `model-check.sh` WARNING (`inherit` never fails) |
 
@@ -104,12 +111,12 @@ A script or hook can **deny**, **ask**, or **exit non-zero**. Skills and the con
 
 On PRs to `dev`/`main`/`master`: env-lint `--protected-diff`, ticket-lint, floor-guard, verify, debt-lint, model-check. `gate.sh pr NN` **only** if the branch is `ticket/NN-slug`. Other branches skip the ticket gate.
 
-Residual escapes stay possible: command indirection, kind misclassification, non-Cursor git. CI + HIGH human merge are load-bearing.
+Residual escapes stay possible: command indirection (`python -c`), a logged `true`, a Check that lints and tests the wrong thing, a pasted Verbatim next to an invented assertion, a Task matcher the hook does not see, a sincere-looking Out of scope, kind misclassification, non-Cursor git. CI + HIGH human merge are load-bearing. There is no ship skill.
 
 ## Bring-up
 
 1. Copy this tree. `chmod +x scripts/*.sh .cursor/hooks/*.sh`
-2. `/agentic-init` — real `verify:` commands, `scope.strict: true`, Destination in `map.md`
+2. `/agentic-init` — real `verify:` commands (that arms the no-scope deny), Destination in `map.md`. `scope.strict` stays false
 3. `scripts/env-lint.sh --write-manifest` after any enforcement-file change
 4. Work only through the spine above
 

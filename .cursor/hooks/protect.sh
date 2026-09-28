@@ -149,8 +149,8 @@ case "$rel" in
   .agentic/tickets/closed/*)
     deny "Blocked: tickets/closed/ is append-only. Close via gate.sh archive (close-authorization token)."
     ;;
-  .agentic/journal/actions-*.jsonl|.agentic/journal/verify-stamps.jsonl|.agentic/journal/metrics.jsonl|.agentic/journal/lessons.md)
-    deny "Blocked: journal audit files are append-only via shell >> ."
+  .agentic/journal/actions-*.jsonl|.agentic/journal/verify-stamps.jsonl|.agentic/journal/metrics.jsonl|.agentic/journal/trek.jsonl|.agentic/journal/lessons.md)
+    deny "Blocked: journal audit files are append-only via shell >> . trek.jsonl only via scripts/trek-log.sh."
     ;;
 esac
 
@@ -169,8 +169,38 @@ if [ "$enforcement" -eq 1 ]; then
 fi
 
 if [ -n "$nn" ] && [ -f "$ROOT/.agentic/state/scope-$nn.txt" ]; then
-  in_scope || deny "Blocked: '$rel' is outside frozen scope for ticket $nn. Widen scope with a Ruling: and rewrite .agentic/state/scope-$nn.txt."
+  in_scope || deny "Blocked: '$rel' is outside frozen scope for ticket $nn. Re-run scripts/gate.sh implement $nn --trek --widen."
   allow
+fi
+
+# Host suite: product writes need a scope file from gate.sh implement.
+# Off while verify.test contains selftest.sh (this template stays editable).
+if [ "$write_mode" -eq 1 ]; then
+  vtest="$(awk '
+    /^verify:/{inb=1; next}
+    inb && /^[^[:space:]#]/{inb=0}
+    inb && $0 ~ /^[[:space:]]+test:/ {
+      line=$0
+      sub(/^[[:space:]]+test:[[:space:]]*/, "", line)
+      sub(/[[:space:]]*#.*/, "", line)
+      gsub(/"/, "", line)
+      print line
+      exit
+    }
+  ' "$ROOT/.agentic/config.yml" 2>/dev/null || true)"
+  case "$vtest" in
+    *selftest.sh*|"") ;;
+    *)
+      case "$rel" in
+        .agentic/*|.git/*) ;;
+        *)
+          if [ -z "$nn" ] || [ ! -f "$ROOT/.agentic/state/scope-$nn.txt" ]; then
+            deny "Blocked: no scope file. Run scripts/gate.sh implement NN --trek before editing product files."
+          fi
+          ;;
+      esac
+      ;;
+  esac
 fi
 
 if [ "$strict" = "true" ]; then

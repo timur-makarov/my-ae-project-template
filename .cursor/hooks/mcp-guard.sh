@@ -65,8 +65,7 @@ if [ -n "$nn" ]; then
   tfile="$(ls "$ROOT/.agentic/tickets/open/$nn"-*.md "$ROOT/.agentic/tickets/closed/$nn"-*.md 2>/dev/null | head -1)"
 fi
 
-NETWORK="$(ticket_field network "$tfile")"
-[ -z "$NETWORK" ] && NETWORK="$(cfg guard network)"
+NETWORK="$(cfg guard network)"
 [ -z "$NETWORK" ] && NETWORK="ask"
 META="$(cfg guard metadata)"
 [ -z "$META" ] && META="deny"

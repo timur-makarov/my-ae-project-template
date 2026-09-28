@@ -28,7 +28,7 @@ Ensure this hierarchy exists (create missing pieces from `.agentic/templates/`, 
 scripts/verify.sh  scripts/ticket-lint.sh  scripts/review-package.sh
 scripts/gate.sh  scripts/stamp-check.sh  scripts/env-lint.sh
 scripts/memory-lint.sh  scripts/evidence-check.sh  scripts/artifact-lint.sh  scripts/debt-lint.sh
-scripts/model-check.sh  scripts/selftest.sh  scripts/lib.sh  scripts/floor-guard.sh
+scripts/model-check.sh  scripts/selftest.sh  scripts/lib.sh  scripts/floor-guard.sh  scripts/trek-log.sh
 .cursor/rules/constitution.mdc  .cursor/rules/default_swe.mdc
 .cursor/hooks.json  .cursor/hooks/guard.sh  .cursor/hooks/audit.sh
 .cursor/hooks/protect.sh  .cursor/hooks/session-start.sh
@@ -45,7 +45,7 @@ scripts/model-check.sh  scripts/selftest.sh  scripts/lib.sh  scripts/floor-guard
 - `config.yml` → `verify:` block: detect the stack (package.json / Cargo.toml / pyproject.toml / go.mod / Makefile...) and propose real commands for `test`, `lint`, `typecheck`, `e2e`. Confirm before writing. The template ships `scripts/selftest.sh` as `verify.test` to prove the environment; replace it with the host project's suite once that exists.
 - `config.yml` → `risk_paths`: keep the defaults; add project-specific floors (`migrations/**`, `**/auth/**`, payment paths).
 - `config.yml` → `models:`: leave `inherit` unless the human names slugs that also appear in `models_allowed`.
-- `config.yml` → `scope.strict: true` after the human confirms the copy is the real project (the template ships false so first edits aren't bricked).
+- `config.yml` → leave `scope.strict: false`. Pointing `verify.test` at the host suite is what arms the no-scope deny. While `verify.test` contains `selftest.sh`, product files stay editable without a scope file.
 - `config.yml` → `craft_skills`: keep true unless the host wants the spine only.
 - `map.md` → **Destination**: one sentence, from the human. Don't invent it.
 - `context/CONTEXT.md`: seed glossary/invariants if the project already has code worth reading. Every load-bearing row needs `cite:path needle:"token"` (`scripts/memory-lint.sh`).
