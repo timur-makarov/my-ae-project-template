@@ -65,6 +65,12 @@ craft_skills: true
 critic:
   fanout: true
 
+audit:
+  enabled: false
+  command: ""
+  on: manual
+  fail_merge: false
+
 # Network is config-only. A ticket network: field is ignored.
 # Pipe-to-interpreter is always deny. Localhost stays allow.
 # new_deps stays on the ticket.

@@ -6,7 +6,9 @@
 #     evidence must appear in actions-*.jsonl (when the journal has entries).
 #   - --tdd COMMAND: the command appears with exit != 0 before exit 0.
 #   - --require-journal: fail if actions-*.jsonl is missing or empty.
-#   - --hostile FILE: each critic hostile-row Command run must appear in the journal.
+#   - --hostile FILE: each Claims-table command in the critic report must appear in the journal.
+#     An APPROVED report with no claim commands fails. When the ticket exists, an
+#     APPROVED report needs at least one command per Done Contract assertion.
 #   - Verify stamp timestamp must postdate the last commit on the branch.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -71,33 +73,58 @@ if [ "$REQUIRE_JOURNAL" -eq 1 ]; then
   fi
 fi
 
+claim_commands() {
+  awk '
+    BEGIN { FS="|" }
+    /^## Claims/ { in_table=1; next }
+    in_table && /^## / { in_table=0 }
+    in_table && /^\|/ {
+      if ($0 ~ /[Cc]laim/ && $0 ~ /[Cc]ommand/) next
+      if ($0 ~ /^[|][-: |]+$/) next
+      cmd=$3
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", cmd)
+      gsub(/`/, "", cmd)
+      if (cmd == "" || cmd == "command" || cmd ~ /</ || cmd ~ /\[/) next
+      print cmd
+    }
+  ' "$1"
+}
+
+report_verdict() {
+  awk '
+    /^\*\*Verdict:\*\*/ || /^- \*\*Verdict:\*\*/ { last=$0 }
+    END { print last }
+  ' "$1" | grep -oE 'APPROVED|CHANGES_REQUESTED|REOPEN_REQUIRED' | head -1
+}
+
 if [ -n "$HOSTILE_FILE" ]; then
   [ -f "$HOSTILE_FILE" ] || err "hostile critic file not found: $HOSTILE_FILE"
   if [ -f "$HOSTILE_FILE" ]; then
-    if ! journal_nonempty; then
-      err "hostile rows require a non-empty audit journal"
-    else
-      while IFS= read -r hcmd; do
-        [ -z "$hcmd" ] && continue
-        case "$hcmd" in *'<'*|*'['*|PASS|FAIL) continue ;; esac
-        if ! journal_has_command "$hcmd"; then
-          err "hostile Command run not in audit journal: $hcmd"
-        fi
-      done < <(awk '
-        BEGIN { FS="|" }
-        /Hostile input/ {
-          in_table=1
-          has_id = ($0 ~ /[[:space:]]ID[[:space:]]/)
-          next
-        }
-        in_table && /^[|][-: ]+[|]/ { next }
-        in_table && /^\|/ {
-          if (has_id) { cmd=$4 } else { cmd=$3 }
-          gsub(/^[[:space:]]+|[[:space:]]+$/, "", cmd)
-          if (cmd != "" && cmd != "Command run") print cmd
-        }
-        in_table && (/^$/ || /^##/ || /^\*\*Findings/) { in_table=0 }
-      ' "$HOSTILE_FILE")
+    hv="$(report_verdict "$HOSTILE_FILE")"
+    hcmds="$(claim_commands "$HOSTILE_FILE")"
+    if [ "$hv" = "APPROVED" ] && [ -z "$hcmds" ]; then
+      err "APPROVED critic has no claim commands"
+    fi
+    tf=""
+    tf="$(ticket_file "$NN" || true)"
+    if [ "$hv" = "APPROVED" ] && [ -n "$tf" ] && [ -f "$tf" ]; then
+      need="$(awk '/^## Done Contract/{inb=1;next} /^## /{inb=0} inb && /^[0-9]+\./{c++} END{print c+0}' "$tf")"
+      got="$(printf '%s\n' "$hcmds" | grep -c . || true)"
+      if [ "$got" -lt "$need" ]; then
+        err "APPROVED critic has $got claim command(s); Done Contract has $need"
+      fi
+    fi
+    if [ -n "$hcmds" ]; then
+      if ! journal_nonempty; then
+        err "claim commands require a non-empty audit journal"
+      else
+        while IFS= read -r hcmd; do
+          [ -z "$hcmd" ] && continue
+          if ! journal_has_command "$hcmd"; then
+            err "claim command not in audit journal: $hcmd"
+          fi
+        done <<< "$hcmds"
+      fi
     fi
   fi
 fi

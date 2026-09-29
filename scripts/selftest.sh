@@ -170,6 +170,7 @@ else
 fi
 cat > "$TMP/critic-cited.md" <<'EOF'
 # Critic
+**Seat:** same-agent
 **Verdict:** CHANGES_REQUESTED
 ## Findings
 - Finding F1: src/a.py:12 does not return the claimed value
@@ -190,15 +191,15 @@ fi
 
 cat > "$TMP/critic-good.md" <<'EOF'
 # Critic
-**Verdict:** APPROVED
-**Attack depth:** `standard`
-| ID | Hostile input | Command run | Pasted output (exact) | Verdict |
-|---|---|---|---|---|
-| F1 | empty | echo empty | empty ok | PASS |
-| F2 | max | echo max | max ok | PASS |
+**Seat:** same-agent
+## Claims
+| Claim | Command | Result |
+|---|---|---|
+| empty input | `echo empty` | held |
+| max input | `echo max` | held |
 ## Epicycles
 - **Epicycle count:** 0
-## Verdict & Deploy Watchlist
+## Verdict
 - **Verdict:** APPROVED — ok
 - **Watchlist:** 1) stamp freshness 2) gate FAIL line
 EOF
@@ -208,6 +209,47 @@ if "$SCRIPT_DIR/artifact-lint.sh" critic "$TMP/critic-good.md" >/dev/null; then
 else
   echo "  FAIL — filled critic report" >&2
   fail=$((fail + 1))
+fi
+
+cat > "$TMP/critic-menu.md" <<'EOF'
+# Critic
+**Seat:** same-agent
+> **Verdict:** APPROVED | CHANGES_REQUESTED | REOPEN_REQUIRED
+## Claims
+| Claim | Command | Result |
+|---|---|---|
+| empty input | `echo empty` | held |
+## Epicycles
+- **Epicycle count:** 0
+## Verdict
+- **Verdict:** APPROVED — ok
+- **Watchlist:** 1) none 2) none
+EOF
+if "$SCRIPT_DIR/artifact-lint.sh" critic "$TMP/critic-menu.md" >/dev/null 2>"$TMP/menu.err"; then
+  echo "  FAIL — verdict menu should fail critic lint" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — verdict menu fails critic lint"
+  pass=$((pass + 1))
+fi
+cat > "$TMP/critic-empty.md" <<'EOF'
+# Critic
+**Seat:** same-agent
+## Claims
+| Claim | Command | Result |
+|---|---|---|
+## Epicycles
+- **Epicycle count:** 0
+## Verdict
+- **Verdict:** APPROVED — ok
+- **Watchlist:** 1) none 2) none
+EOF
+if "$SCRIPT_DIR/artifact-lint.sh" critic "$TMP/critic-empty.md" >/dev/null 2>"$TMP/empty.err"; then
+  echo "  FAIL — APPROVED with no claim command should fail critic lint" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — APPROVED with no claim command fails critic lint"
+  pass=$((pass + 1))
 fi
 
 echo "selftest: ledger sentinel"
@@ -637,7 +679,7 @@ assert_eq "redirect onto scope file is denied" "$(hgperm '{"command":"echo ** > 
 assert_eq "redirect onto other state file is allowed" "$(hgperm '{"command":"echo x > .agentic/state/other.txt"}')" "allow"
 rm -rf "$HG"
 
-echo "selftest: evidence-check journal + hostile rows"
+echo "selftest: evidence-check journal + claim commands"
 EJ="$TMP/evroot"
 mkdir -p "$EJ/.agentic/journal"
 cp "$ROOT/.agentic/config.yml" "$EJ/.agentic/config.yml"
@@ -665,6 +707,22 @@ if AGENTIC_ROOT="$EJ" "$SCRIPT_DIR/evidence-check.sh" 01 --require-journal --hos
 else
   echo "  FAIL — hostile commands present should pass" >&2
   fail=$((fail + 1))
+fi
+
+cp "$TMP/critic-empty.md" "$EJ/.agentic/journal/01-critic-empty.md"
+if AGENTIC_ROOT="$EJ" "$SCRIPT_DIR/evidence-check.sh" 01 --require-journal --hostile "$EJ/.agentic/journal/01-critic-empty.md" >/dev/null 2>"$TMP/eje.err"; then
+  echo "  FAIL — APPROVED with no claim command should fail evidence-check" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — APPROVED with no claim command fails evidence-check"
+  pass=$((pass + 1))
+fi
+if grep -q "grep -q 'APPROVED'" "$SCRIPT_DIR/gate.sh"; then
+  echo "  FAIL — gate.sh still accepts any APPROVED token" >&2
+  fail=$((fail + 1))
+else
+  echo "  ok  — gate.sh does not grep for any APPROVED token"
+  pass=$((pass + 1))
 fi
 
 echo "selftest: lockfile_added_names"

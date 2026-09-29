@@ -37,6 +37,28 @@ jobs:
       - name: model-check
         run: scripts/model-check.sh
 
+      - name: audit
+        run: |
+          set -euo pipefail
+          enabled="$(awk '/^audit:/{inb=1;next} inb && /^[^[:space:]#]/{inb=0} inb && /enabled:/{print $2; exit}' .agentic/config.yml)"
+          when="$(awk '/^audit:/{inb=1;next} inb && /^[^[:space:]#]/{inb=0} inb && /^[[:space:]]+on:/{print $2; exit}' .agentic/config.yml)"
+          cmd="$(awk '/^audit:/{inb=1;next} inb && /^[^[:space:]#]/{inb=0} inb && /command:/{sub(/^[[:space:]]*command:[[:space:]]*/,""); gsub(/"/,""); print; exit}' .agentic/config.yml)"
+          fail_merge="$(awk '/^audit:/{inb=1;next} inb && /^[^[:space:]#]/{inb=0} inb && /fail_merge:/{print $2; exit}' .agentic/config.yml)"
+          if [ "$enabled" != "true" ] || [ "$when" != "scheduled" ] || [ -z "$cmd" ]; then
+            echo "audit: not run"
+            exit 0
+          fi
+          set +e
+          bash -c "$cmd"
+          rc=$?
+          set -e
+          if [ "$rc" -ne 0 ] && [ "$fail_merge" = "true" ]; then
+            echo "audit: command failed"
+            exit "$rc"
+          fi
+          echo "audit: command finished"
+          exit 0
+
       - name: gate pr (ticket branches)
         run: |
           set -euo pipefail

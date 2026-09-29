@@ -17,15 +17,18 @@ err() { echo "artifact-lint: $1" >&2; fail=1; }
 lint_critic() {
   local f="$1"
   [ -f "$f" ] || { err "critic report not found: $f"; return; }
+  if awk '/APPROVED/ && /CHANGES_REQUESTED/ && /REOPEN_REQUIRED/ { found=1 } END { exit (found ? 0 : 1) }' "$f"; then
+    err "$f: verdict menu lists every verdict on one line"
+  fi
   local verdict
   verdict="$(grep -E '^\*\*Verdict:\*\*|^- \*\*Verdict:\*\*' "$f" | tail -1 | grep -oE 'APPROVED|CHANGES_REQUESTED|REOPEN_REQUIRED' | head -1)"
-  if [ -z "$verdict" ]; then
-    verdict="$(grep -oE 'APPROVED|CHANGES_REQUESTED|REOPEN_REQUIRED' "$f" | head -1)"
-  fi
   case "$verdict" in
     APPROVED|CHANGES_REQUESTED|REOPEN_REQUIRED) ;;
     *) err "$f: verdict line missing or not in enum" ;;
   esac
+  if ! grep -Eq 'Seat:[*[:space:]]*`?(same-agent|spawned)' "$f"; then
+    err "$f: missing Seat: same-agent or spawned"
+  fi
   if ! grep -q 'Epicycle count' "$f"; then
     err "$f: missing epicycle count"
   fi
@@ -38,17 +41,41 @@ lint_critic() {
       err "$f: numeric performance claim without measured/not measured (metric-honesty)"
     fi
   fi
+  if [ "$verdict" = "APPROVED" ]; then
+    if ! awk '
+      BEGIN { FS="|" }
+      /^## Claims/ { in_table=1; next }
+      in_table && /^## / { in_table=0 }
+      in_table && /^\|/ {
+        if ($0 ~ /[Cc]laim/ && $0 ~ /[Cc]ommand/) next
+        if ($0 ~ /^[|][-: |]+$/) next
+        cmd=$3
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", cmd)
+        gsub(/`/, "", cmd)
+        if (cmd != "" && cmd != "command" && cmd !~ /</ && cmd !~ /\[/) n++
+      }
+      END { exit (n > 0 ? 0 : 1) }
+    ' "$f"; then
+      err "$f: APPROVED report has no claim command"
+    fi
+  fi
   # A finding must cite a changed file:line or a command that was run and failed.
-  # Count is not capped. An APPROVED report with no findings needs no citation.
   awk -v file="$f" '
     function cited(s) {
       if (s ~ /[A-Za-z0-9_.-]+:[0-9]+/) return 1
       if (s ~ /`[^`]+`/ && (s ~ /[Ff]ail/ || s ~ /exited/)) return 1
       return 0
     }
+    function classed(s) {
+      return (s ~ /injection/ || s ~ /authz/ || s ~ /secret/ || s ~ /supply-chain/)
+    }
     /^Finding[[:space:]]/ || /^- Finding[[:space:]]/ || /^- F[0-9]+/ {
       if (!cited($0)) {
         printf "artifact-lint: %s: finding cites neither a changed file:line nor a failed command: %s\n", file, $0 > "/dev/stderr"
+        bad=1
+      }
+      if (file ~ /critic-security/ && !classed($0)) {
+        printf "artifact-lint: %s: security finding missing class id: %s\n", file, $0 > "/dev/stderr"
         bad=1
       }
     }

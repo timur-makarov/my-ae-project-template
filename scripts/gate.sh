@@ -465,6 +465,13 @@ require_audit_journal() {
   "$SCRIPT_DIR/evidence-check.sh" "$NN" --require-journal || fail "audit journal required for $TIER $kind"
 }
 
+report_verdict() {
+  awk '
+    /^\*\*Verdict:\*\*/ || /^- \*\*Verdict:\*\*/ { last=$0 }
+    END { print last }
+  ' "$1" | grep -oE 'APPROVED|CHANGES_REQUESTED|REOPEN_REQUIRED' | head -1
+}
+
 require_hostile_journal() {
   local on kind report
   on="$(config_get limits.tdd_required)"
@@ -474,7 +481,7 @@ require_hostile_journal() {
   case "$kind" in directive|diagnosis) ;; *) return 0 ;; esac
   report="$JOURNAL/$NN-critic.md"
   [ -f "$report" ] || return 0
-  "$SCRIPT_DIR/evidence-check.sh" "$NN" --require-journal --hostile "$report" || fail "hostile Command run missing from audit journal"
+  "$SCRIPT_DIR/evidence-check.sh" "$NN" --require-journal --hostile "$report" || fail "claim command missing from the audit journal"
 }
 
 security_fanout() {
@@ -492,7 +499,10 @@ security_fanout() {
   [ "$need" -eq 0 ] && return 0
   local sec="$JOURNAL/$NN-critic-security.md"
   [ -f "$sec" ] || fail "critic.fanout: HIGH diff hits a HIGH risk_path — missing $sec (spawn security persona in the same turn as the critic)"
-  grep -q 'APPROVED' "$sec" || fail "security critic verdict is not APPROVED"
+  "$SCRIPT_DIR/artifact-lint.sh" critic "$sec" || fail "security critic lint failed"
+  local sv
+  sv="$(report_verdict "$sec")"
+  [ "$sv" = "APPROVED" ] || fail "security critic verdict is '${sv:-missing}' (need APPROVED)"
 }
 
 tdd_evidence() {
@@ -573,14 +583,9 @@ stage_pr() {
     local report="$JOURNAL/$NN-critic.md"
     [ -f "$report" ] || fail "critic report missing for $TIER ticket"
     "$SCRIPT_DIR/artifact-lint.sh" critic "$report" || fail "critic-report lint failed"
-    grep -q 'APPROVED' "$report" || fail "critic verdict is not APPROVED"
-    if grep -q 'CHANGES_REQUESTED\|REOPEN_REQUIRED' "$report" && ! grep -q 'APPROVED' "$report"; then
-      fail "critic verdict blocks PR"
-    fi
-    # Last verdict line must be APPROVED
     local v
-    v="$(grep -E 'Verdict' "$report" | grep -oE 'APPROVED|CHANGES_REQUESTED|REOPEN_REQUIRED' | tail -1)"
-    [ "$v" = "APPROVED" ] || fail "last critic verdict is '$v' (need APPROVED)"
+    v="$(report_verdict "$report")"
+    [ "$v" = "APPROVED" ] || fail "last critic verdict is '${v:-missing}' (need APPROVED)"
     require_hostile_journal
   fi
   require_audit_journal

@@ -15,14 +15,16 @@ spark
   → /agentic-grill         if blast radius expands or two costly readings survive
   → /agentic-task          atomic ticket: Done Contract, out of scope, reversibility, scope freeze
   → /agentic-implement     TDD pieces, commits named NN, verify stamp
-  → /agentic-critic        evidence-only; HIGH risk_paths also spawn a security persona
+  → /agentic-critic        same agent; one journaled command per claim; HIGH risk_paths also a security report
   → /agentic-pr            human merge for HIGH
   → /agentic-archive       close token, lessons, CONTEXT
 ```
 
 `/agentic-route` is the map. `/agentic-status` anytime. `/agentic-handoff` mid-ticket. `/agentic-postmortem` when shipped work breaks.
 
-LOW tickets skip the critic. The fast lane is `scripts/gate.sh implement NN --trek`, and the same agent writes the code. Humans sit **on** the loop (expansion, HIGH merge, irreversible work), not between every slice. A LOW ticket can close on a green `scripts/trek-log.sh` line for this HEAD. MEDIUM and HIGH still stamp, then critic, then pr.
+LOW tickets skip the critic. The fast lane is `scripts/gate.sh implement NN --trek`, and the same agent writes the code. Humans sit **on** the loop (expansion, HIGH merge, irreversible work), not between every slice. A LOW ticket can close on a green `scripts/trek-log.sh` line for this HEAD. MEDIUM and HIGH still stamp, then critic, then pr. The critic's Claims table is the merge check: one command per Done Contract claim, and that command is in the action journal. A report line that lists every verdict word is rejected.
+
+`/agentic-audit` runs only when someone asks. It is off by default (`audit.enabled: false`) and does not gate the merge. CI prints `audit: not run` until a copied project turns it on. Domain skills that still load when `craft_skills` is true: `/agentic-debug`, `/agentic-api`, `/agentic-security`, `/agentic-migrate`.
 
 If a change is not reversible, the ticket says `reversibility: irreversible` with a compensating `rollback:` — and that is EXPANDING, so it grills first.
 
@@ -83,11 +85,11 @@ A script or hook can **deny**, **ask**, or **exit non-zero**. Skills and the con
 | Claim lock (another session holds `in-progress`) | `gate.sh implement` |
 | No baseline verify stamp; later critic/pr without a fresh green stamp for this HEAD | `stamp-check.sh` |
 | Optional: implement from a linked worktree | `limits.require_worktree` (shipped false) |
-| MEDIUM/HIGH critic: ledger, evidence-only payload, last verdict `APPROVED` | `gate.sh critic` / `pr` + `artifact-lint.sh` |
+| MEDIUM/HIGH critic: claim commands in the journal, last verdict line `APPROVED` | `gate.sh pr` + `artifact-lint.sh` + `evidence-check.sh` |
 | MEDIUM/HIGH: ticket `Check:` commands appear in `actions-*.jsonl` | `evidence-check.sh` |
 | Critic finding cites neither a changed `file:line` nor a failed command | `artifact-lint.sh` rejects it. One report; a second `gate.sh critic` without `--again` fails |
 | Quoted `scripts/`/`pytest`/… in reports must appear in the journal; RED before GREEN (skipped while `verify.test` is `selftest.sh`) | `evidence-check.sh` |
-| HIGH diff hitting a HIGH `risk_paths` glob | `NN-critic-security.md` APPROVED (`critic.fanout`) |
+| HIGH diff hitting a HIGH `risk_paths` glob | `NN-critic-security.md` last verdict line `APPROVED` (`critic.fanout`) |
 | Diff floor above ticket tier; test-count drop without a Ruling; leftover ASSUMED rows | `gate.sh pr` |
 | Destructive DDL without a down-file / `expand-contract`; migrations require HIGH | `gate.sh pr` |
 | Lockfile changed: `new_deps:` nonempty **and** lists every added package name | `gate.sh pr` |

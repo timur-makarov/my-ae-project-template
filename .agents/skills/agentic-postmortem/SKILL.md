@@ -30,7 +30,7 @@ This is the step that makes the environment improve itself:
 
 - **lessons.md** — append: `- [NN] YYYY-MM-DD <defect that escaped> — <the check that would have caught it> — cite:path needle:"token"`.
 - **metrics.jsonl** — read recent `gate` / `critic` events: a critic that has approved every MEDIUM ticket first-pass is a broken critic.
-- **Critic hostile set** — if the escaping defect class isn't in the critic's counterexample table (`.agentic/templates/critic_report.md`), add a row for it.
+- **Check or guard** — if a command or a `guard.sh` pattern would have caught the escaping defect, add that `Check:` or that pattern.
 - **CONTEXT.md** — if the regression revealed an invariant or risk boundary nobody had written down, write it down now (`cite:path needle:"token"` on the row).
 - **Verify gate** — if a deterministic check could have caught it, add it to the project's verify commands (config `verify:` block) or test suite, so prose never has to remember it again.
 

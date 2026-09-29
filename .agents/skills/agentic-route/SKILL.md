@@ -18,23 +18,23 @@ spark
  ├── independently testable modules bundled                → Capability Map in the ticket, then N tickets
  ├── new work that should be tracked                       → /agentic-task
  ├── ticket open and unblocked                             → /agentic-implement
- │     ├── UI / css / tsx / vue                            → /agentic-ui + /agentic-browser
  │     ├── API / public types / OpenAPI                    → /agentic-api
  │     ├── auth / payment / untrusted input                → /agentic-security
- │     ├── new dependency or framework API                 → /agentic-source
  │     ├── tests failing / build red                       → /agentic-debug (stop the line)
- │     ├── HIGH non-trivial piece (cross-service, migrate) → in-flight doubt (critic hop), then continue
- │     └── performance ticket                              → /agentic-perf (measure; keep-or-revert)
- ├── ready-for-review                                      → /agentic-critic  (+ security fan-out on HIGH risk_paths)
+ │     └── HIGH non-trivial piece (cross-service, migrate) → in-flight doubt (critic hop), then continue
+ ├── ready-for-review                                      → /agentic-critic  (same agent; HIGH risk_paths also a security report)
  ├── critic APPROVED                                       → /agentic-pr
  ├── merged / accepted                                     → /agentic-archive
  ├── session dying mid-ticket                              → /agentic-handoff
- └── shipped work regressed                                → /agentic-postmortem
+ ├── shipped work regressed                                → /agentic-postmortem
+ └── explicit whole-codebase audit                         → /agentic-audit
 ```
+
+`/agentic-audit` is not between critic and pr. Loading it does not start a run, and `gate.sh pr` does not read it.
 
 LOW fast lane: skip critic and domain packs unless a glob above matches. That lane is `scripts/gate.sh implement NN --trek`. The same agent writes the code.
 
-If `craft_skills: false`, skip `/agentic-{ui,api,browser,security,perf,observe,migrate,spec,source,debug,simplify}` and keep the spine only.
+If `craft_skills: false`, skip `/agentic-{api,security,migrate,debug}` and keep the spine only.
 
 ## Rationalizations
 
