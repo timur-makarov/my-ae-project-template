@@ -1,13 +1,13 @@
 # Agentic environment configuration — the single source of tunables.
-# Skills and scripts read this file; edit values here instead of editing skills.
+# Scripts and hooks read this file; edit values here instead of editing skills.
 # Keep the format flat (key: value, one extra level of nesting) — scripts parse it with awk.
-# Loosening numbers or turning a gate off requires a HIGH ticket + Ruling: (floor-guard).
+# This file's risk floor is HIGH: loosening it goes through a HIGH ticket.
 
 tracker: local-markdown        # local-markdown | github-issues
 
-base_branch: dev               # PRs target this branch
-branch_prefix: ticket/         # implementation branches: ticket/NN-slug
-worktree_dir: .worktrees       # local isolation fallback (must be git-ignored)
+base_branch: main              # PRs target this branch
+branch_prefix: ticket/         # a claim is a branch: ticket/NN-slug
+worktree_dir: .worktrees       # gate.sh implement NN --worktree puts worktrees here (git-ignored)
 
 models:
   planner: inherit
@@ -21,22 +21,30 @@ models_allowed:
   - inherit
 
 risk:
-  low_fast_lane: true
+  low_fast_lane: true          # LOW: no verify stamp, no reviewer — checks + ship
   high_requires_human_merge: true
 
+# Risk floors: a ticket must be at least this tier to touch a matching path.
 risk_paths:
   "migrations/**": HIGH
   "**/auth/**": HIGH
   "**/*payment*": HIGH
+  "scripts/hooks/**": HIGH
+  ".github/**": HIGH
   ".cursor/**": HIGH
+  ".claude/settings.json": HIGH
+  ".codex/**": HIGH
+  ".agentic/config.yml": HIGH
   "scripts/**": MEDIUM
-  ".agentic/templates/**": MEDIUM
-  ".agents/**": MEDIUM
-  ".github/**": MEDIUM
 
-# Template ships false so a fresh copy is editable. /agentic-init flips to true.
+# false: no ticket needed to edit files (the template ships editable).
+# true: file-tool writes need a claimed ticket, except ticketless_paths.
+# A claimed ticket's frozen scope is enforced either way.
 scope:
   strict: false
+
+ticketless_paths:
+  - "docs/**"
 
 migrations_dir: migrations
 
@@ -47,23 +55,30 @@ verify:
   e2e: ""
 
 limits:
-  fix_rounds_per_piece: 5
-  epicycles_before_reopen: 2
+  max_active_tickets: 1        # in-progress tickets across local branches/worktrees
+  stop_followups: 0            # stop hook re-prompts per run when next has agent work
+  command_timeout_secs: 900    # per Check:/claim command
   context_md_max_lines: 120
   intake_strict: true
   max_scope_globs: 5
   require_worktree: false
   diff_warn_lines: 300
   diff_fail_lines: 0
-  tdd_required: true
   exception_max_days: 90
   lesson_ttl_days: 90
 
 floor_guard: true
 craft_skills: true
 
+# Reviewer. Empty command = Mode A: the agent spawns the agentic-evaluator
+# subagent on the payload. A command = Mode B: gate.sh critic runs it headless
+# in a throwaway worktree; stdout is the report. It gets $AGENTIC_BRIEF,
+# $AGENTIC_PAYLOAD, $AGENTIC_NN. Examples:
+#   command: 'claude -p "$(cat "$AGENTIC_BRIEF")" --permission-mode plan'
+#   command: 'codex exec --sandbox read-only "$(cat "$AGENTIC_BRIEF")"'
 critic:
-  fanout: true
+  fanout: true                 # HIGH diff on a HIGH path: + security reviewer
+  command: ""
 
 audit:
   enabled: false
@@ -71,23 +86,21 @@ audit:
   on: manual
   fail_merge: false
 
-# Network is config-only. A ticket network: field is ignored.
-# Pipe-to-interpreter is always deny. Localhost stays allow.
-# new_deps stays on the ticket.
+# Agent-level restrictions. deny = blocked; ask = the tool prompts; allow = free.
+# Pipe-to-interpreter and cloud metadata stay deny. Localhost is always allowed.
 guard:
-  network: ask
-  install_pipe: deny
-  new_deps: ask
-  secrets: ask
-  commit_requires_nn: true
-  privileged: deny
+  network: allow               # shell fetches, WebFetch/WebSearch, MCP
+  install_pipe: deny           # curl | sh and friends
+  new_deps: allow              # package installs (the ticket's new_deps: is checked at ship)
+  secrets: deny                # reading/writing .env, keys (.env.example is fine)
+  commit_requires_nn: true     # commits on ticket/NN-* name NN
+  privileged: deny             # --privileged, chmod 777, mkfs, dd of=/dev
   metadata: deny
 
 floor_ignore:
   - "*.md"
   - "*.jsonl"
   - "vendor/**"
-  - "_staging/**"
   - "scripts/selftest.sh"
   - "scripts/floor-guard.sh"
 

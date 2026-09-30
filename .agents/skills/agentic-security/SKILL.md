@@ -5,7 +5,7 @@ description: "Use when the diff touches auth, payments, untrusted input, secrets
 
 # Agentic Security
 
-On a HIGH diff that hits a `risk_paths` glob, write `.agentic/journal/<NN>-critic-security.md` from the critic template. Spawning a subagent asks. If it is not spawned, set `Seat: same-agent`. A spawned persona sets `Seat: spawned`. Either way the report cites changed lines.
+On a HIGH diff that hits a HIGH `risk_paths` glob (and `critic.fanout: true`), the gate writes a second brief, `.agentic/state/payload-<NN>/BRIEF-security.md`. A separate reviewer (persona `.agents/personas/security-auditor.md`) writes `.agentic/journal/<NN>-critic-security.md` from the critic template, citing changed lines.
 
 A finding names the lower-trust principal, the boundary that was crossed, and the observed result. A missing header, a missing rate limit, or a second copy of a `guard.sh` or floor-guard hit is not a finding.
 
@@ -29,4 +29,4 @@ Numeric "secure" claims without a command are `not measured`.
 
 ## Verification
 
-Same critic lint as the claim report: one verdict word, `Seat:`, and an `APPROVED` report needs a claim command in the journal. `gate.sh pr` requires the last verdict line to be `APPROVED` when fan-out triggers.
+Same rules as the main report: the `**Head:**` line from the brief, one `**Verdict:**`, and at least one Claims row. The gate re-runs every claim command and requires `APPROVED` before ship.

@@ -4,8 +4,6 @@ type: directive
 risk_tier: LOW
 template: lite
 blocked_by: none
-branch: —
-claimed_by: ""
 reversibility: reversible
 rollback: n/a
 new_deps: []
@@ -40,8 +38,5 @@ scope_paths:
 
 ## Resolution
 
-<!-- Filled at completion:
-     Sentence 1 answering the request in its own terms.
-     Proof sketch: file:line pointers, test command + output, exit codes.
-     Risk: weakest premise + label, untested paths by name, flip condition.
-     Rulings: none -->
+<!-- Optional, filled at completion: sentence 1 answers the request; proof sketch with
+     file:line pointers and commands; weakest premise + flip condition. -->

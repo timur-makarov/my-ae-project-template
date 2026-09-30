@@ -4,6 +4,10 @@
 # Usage:
 #   scripts/memory-lint.sh
 #   scripts/memory-lint.sh --root DIR [--context FILE] [--lessons FILE]
+#
+# Lessons live one file per ticket in .agentic/journal/lessons/NN.md (so
+# parallel tickets never conflict). A "- DROPPED" line in any file retires the
+# matching lesson in every file.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib.sh
@@ -27,7 +31,14 @@ if [ -f "$MEM_ROOT/.agentic/config.yml" ]; then
 fi
 
 [ -n "$CONTEXT_FILE" ] || CONTEXT_FILE="$MEM_ROOT/.agentic/context/CONTEXT.md"
-[ -n "$LESSONS_FILE" ] || LESSONS_FILE="$MEM_ROOT/.agentic/journal/lessons.md"
+LESSON_FILES=()
+if [ -n "$LESSONS_FILE" ]; then
+  LESSON_FILES=("$LESSONS_FILE")
+else
+  for f in "$MEM_ROOT"/.agentic/journal/lessons/*.md "$MEM_ROOT/.agentic/journal/lessons.md"; do
+    [ -f "$f" ] && LESSON_FILES+=("$f")
+  done
+fi
 
 TTL="$(config_get "limits.lesson_ttl_days")"
 [ -n "$TTL" ] || TTL=90
@@ -227,13 +238,11 @@ extract_lesson_defect() {
   printf '%s' "$1" | sed 's/ — .*//'
 }
 
-lint_lessons() {
-  local f="$1"
+DROPPED=""
+collect_dropped() {
+  local f="$1" rel lineno line rest defect
   [ -f "$f" ] || return 0
-  local rel lineno line rest date defect cite_spec dropped age
   rel="${f#$MEM_ROOT/}"
-  [ "$rel" = "$f" ] && rel="$f"
-  dropped=""
   lineno=0
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
@@ -247,10 +256,18 @@ lint_lessons() {
         defect="${rest#????-??-?? }"
         # date is first token; strip it portably
         defect="$(printf '%s' "$rest" | sed 's/^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][[:space:]]*//')"
-        dropped="$dropped$defect"$'\n'
+        DROPPED="$DROPPED$defect"$'\n'
         ;;
     esac
   done < "$f"
+}
+
+lint_lessons() {
+  local f="$1"
+  [ -f "$f" ] || return 0
+  local rel lineno line rest date defect cite_spec age
+  rel="${f#$MEM_ROOT/}"
+  [ "$rel" = "$f" ] && rel="$f"
 
   lineno=0
   while IFS= read -r line || [ -n "$line" ]; do
@@ -269,7 +286,7 @@ lint_lessons() {
     date="$(printf '%s' "$rest" | awk '{print $1}')"
     rest="$(printf '%s' "$rest" | sed 's/^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9][[:space:]]*//')"
     defect="$(extract_lesson_defect "$rest")"
-    if printf '%s' "$dropped" | grep -Fqx -- "$defect"; then
+    if printf '%s' "$DROPPED" | grep -Fqx -- "$defect"; then
       continue
     fi
     if ! printf '%s' "$line" | grep -q 'cite:'; then
@@ -290,7 +307,8 @@ lint_lessons() {
 }
 
 lint_context "$CONTEXT_FILE"
-lint_lessons "$LESSONS_FILE"
+for f in ${LESSON_FILES[@]+"${LESSON_FILES[@]}"}; do collect_dropped "$f"; done
+for f in ${LESSON_FILES[@]+"${LESSON_FILES[@]}"}; do lint_lessons "$f"; done
 
 if [ "$fail" -eq 0 ]; then
   echo "memory-lint: OK"

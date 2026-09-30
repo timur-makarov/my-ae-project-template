@@ -1,39 +1,39 @@
 ---
 name: agentic-archive
-description: "Use when a ticket's work has been merged or accepted and the ticket should be closed, indexed, and distilled into long-term memory."
+description: "Use when gate.sh next asks for lessons before a MEDIUM/HIGH ship, or when a ticket's work should be distilled into long-term memory."
 ---
 
-# Agentic Archive: Closure & Memory Compaction
+# Agentic Archive: Distill Memory Before Ship
 
-Close a verified ticket, index it, and distill what the project learned. History is append-only: never edit closed tickets or journal entries.
+Closing is mechanical: `scripts/gate.sh ship NN` (via `advance`) moves the ticket to
+`tickets/closed/` on its branch and commits `NN: close`. This skill is the part a script can't do:
+deciding what the project learned. It runs before ship, so the memory lands in the same PR.
 
-## 1. Closure criteria (all must hold — otherwise report what's missing and stop)
+## 1. Lessons: `.agentic/journal/lessons/NN.md`
 
-Run `scripts/gate.sh archive <NN>` (or `scripts/gate.sh archive <NN> --accepted-by "<verbatim human words>"` when the human explicitly accepts as-is). The gate writes `.agentic/state/close-authorized-<NN>`; the guard hook **denies** moving any file into `tickets/closed/` without that token. Do not skip the gate and move the file by hand.
+Start from `.agentic/templates/lessons.md`. One line per real defect the reviewer, CI, or you
+found along the way:
 
-The gate requires: ticket lint, fresh green stamp on this HEAD, critic APPROVED for MEDIUM/HIGH, no ASSUMED rows, Done Contract / constraint / Definition of Done boxes checked, and either a new `lessons.md` line or the sentinel `Lessons: none`.
+```
+- [NN] YYYY-MM-DD <defect> — <check that catches it> — cite:path needle:"token"
+```
 
-## 2. Archive
+Prefer an enforcing cite (`scripts/`, a `*test*` file, or a `verify.*` command). Lessons older than
+`limits.lesson_ttl_days` without one fail `scripts/memory-lint.sh`: promote them to a check or retire
+them with `- DROPPED YYYY-MM-DD <defect>`. Nothing learned → `Lessons: none` (the file must exist).
 
-- Ticket header: `Status: closed (closed at: YYYY-MM-DD HH:MM)`.
-- Move `tickets/open/<NN>-<slug>.md` → `tickets/closed/<NN>-<slug>.md`.
+## 2. Context: `.agentic/context/CONTEXT.md`
 
-## 3. Update the map
+New terms go in the glossary; new invariants or risk boundaries go in their sections. Each
+load-bearing row needs `cite:path needle:"token"`. Over `limits.context_md_max_lines`, **compact**
+(merge, drop stale) rather than append.
 
-- §2 Decisions So Far: `- [<NN> — <title>](./tickets/closed/<NN>-<slug>.md) — <one-line gist>`.
-- Remove from §3 Active Frontier.
-- **Advance the frontier:** any §4 ticket blocked only by this one graduates to §3. Name the newly unblocked tickets in your report.
+## 3. Decisions
 
-## 4. Distill memory
+A decision that affects multiple modules or external systems gets an ADR in `.agentic/context/adr/`
+(from `.agentic/templates/adr.md`), indexed in CONTEXT.md.
 
-- `context/CONTEXT.md`: new terms → glossary; new invariants or risk boundaries → their sections. Each load-bearing row needs `cite:path needle:"token"` (glossary Cite column). Then check the line count against `limits.context_md_max_lines` — over the cap, **compact** (merge related entries, drop stale ones) rather than append. CONTEXT.md is distilled memory, not a log. `scripts/memory-lint.sh` fails missing cites, needles that miss, and cites of README/lockfiles.
-- Major architectural decision (affects multiple modules or external systems) → ADR in `context/adr/` from the template, indexed in CONTEXT.md (markdown link is the cite; needle optional).
-- Real defects the critic or review found → confirm they're in `journal/lessons.md` (one line each): `- [NN] YYYY-MM-DD <defect> — <check> — cite:path needle:"token"`. Prefer an enforcing cite (`scripts/`, `*test*`, or a `verify.*` command). Lessons older than `limits.lesson_ttl_days` without one fail lint — promote or append `- DROPPED YYYY-MM-DD <defect>`. If nothing to distill, append or keep the sentinel `Lessons: none` (the line must exist either way).
+## 4. Then
 
-## 5. Tracker sync (only if `tracker: github-issues`)
-
-`gh issue close <issue> --comment "Closed: <gist>. PR: <url>"` for the mirrored issue recorded in the ticket header.
-
-## 6. Report
-
-Sentence 1: ticket closed, archived, map updated. Proof: paths to the closed ticket and updated map. Next: the newly unblocked frontier tickets ready for `/agentic-implement`.
+`scripts/gate.sh advance NN`. `memory-lint` runs inside ship.
+Tracker `github-issues`: after merge, `gh issue close <issue> --comment "Closed: <gist>. PR: <url>"`.

@@ -4,23 +4,17 @@
 
 <1–3 bullets: what changed and why, locked to the ticket's restatement>
 
-**Ticket:** `.agentic/tickets/open/NN-slug.md` (moves to `closed/` on archive)
+**Ticket:** `.agentic/tickets/closed/NN-slug.md`
 
 ## Done Contract
 
-- [ ] <assertion 1 — checked with evidence below>
+- <assertion 1> — `<check command>` → exit 0
 
 ## Changes / didn't touch / concerns
 
 - **Changed:**
 - **Didn't touch (intentionally):**
 - **Concerns:**
-
-## Verification
-
-```
-<command> → <exit code / summary line>
-```
 
 ## Rollback
 
@@ -32,15 +26,7 @@
 - **Untested paths:** <named, or "none">
 - **Flip condition:** <the observation that would reverse this change>
 
-## Rulings made autonomously
+## Review
 
-<!-- Every decision taken without a human, from the ticket ledger.
-     `gate.sh pr` greps the ledger for `Ruling:` lines and requires each
-     to appear here. If the ledger says `Rulings: none`, write that. -->
-
-Rulings: none
-
-## Critic
-
-**Verdict:** <APPROVED — report: `.agentic/journal/NN-critic.md`> <!-- or "N/A (LOW risk fast lane)" -->
-**Security fan-out:** <path or N/A>
+**Verdict:** <APPROVED — `.agentic/journal/NN-critic.md`> <!-- or "LOW fast lane" -->
+**Security fan-out:** <`.agentic/journal/NN-critic-security.md` or N/A>

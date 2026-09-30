@@ -2,7 +2,7 @@
 # debt-lint.sh — every PONYTAIL: marker must name a ticket or ADR.
 #
 # Usage: scripts/debt-lint.sh [path ...]
-#   Default: scan the repo (excluding .git, .worktrees, gstack).
+#   Default: scan the repo (excluding .git and .worktrees).
 #   Valid: PONYTAIL(01): ...   PONYTAIL(adr-0003): ...
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,8 +15,8 @@ if [ ${#PATHS[@]} -eq 0 ]; then
 fi
 
 fail=0
-hits="$(grep -RIn --exclude-dir=.git --exclude-dir=.worktrees --exclude-dir=gstack \
-  --exclude='*.jsonl' --exclude='analysis.md' --exclude='README.md' \
+hits="$(grep -RIn --exclude-dir=.git --exclude-dir=.worktrees \
+  --exclude='*.jsonl' --exclude='README.md' \
   --exclude='selftest.sh' --exclude='debt-lint.sh' --exclude='*.md' \
   -E 'PONYTAIL(\(|:)' "${PATHS[@]}" 2>/dev/null || true)"
 
@@ -34,7 +34,7 @@ while IFS= read -r line; do
     id="$(printf '%s' "$rest" | grep -oE 'PONYTAIL\((adr-[0-9]+|[0-9]+)\)' | head -1 | sed 's/PONYTAIL(//;s/)//')"
     case "$id" in
       adr-*)
-        found="$(find "$ROOT/.agentic/context/adr" -name "${id}-*.md" -o -name "${id}.md" 2>/dev/null | head -1)"
+        found="$(find "$ROOT/.agentic/context/adr" -name "${id}-*.md" -o -name "${id}.md" -o -name "${id#adr-}-*.md" 2>/dev/null | head -1)"
         if [ -z "$found" ]; then
           echo "debt-lint: $file: orphan PONYTAIL($id) — no matching ADR" >&2
           fail=1

@@ -1,40 +1,20 @@
-# Project Map & Decision Index
+# Project Map
 
-> **Destination:** A copy-pasteable project environment where agentic engineering is gated by scripts, not prose.
-> **Tracker:** see `.agentic/config.yml`
+> **Destination:** <one sentence from the human: what this project is for>
+> **Where things stand:** `scripts/gate.sh next --all` (in flight, open, blocked, recently closed).
 
----
+## Standing Notes
 
-## 1. Standing Notes & Context
-
-- **Spine:** `/agentic-route`, `/agentic-init`, `/agentic-task`, `/agentic-grill`, `/agentic-implement`, `/agentic-critic`, `/agentic-pr`, `/agentic-archive`, `/agentic-status`, `/agentic-handoff`, `/agentic-postmortem`. `/agentic-audit` is off the spine (explicit request only).
-- **Intake:** `/agentic-idea`, `/agentic-interview`.
-- **Craft (when `craft_skills: true`):** `/agentic-debug`, `/agentic-api`, `/agentic-security`, `/agentic-migrate`.
+- **Workflow:** `AGENTS.md` § The railroad. Skills: `/agentic-task`, `/agentic-implement`,
+  `/agentic-critic`, `/agentic-pr`, `/agentic-archive`, `/agentic-status`, `/agentic-grill`,
+  `/agentic-handoff`, `/agentic-postmortem`; intake `/agentic-idea`, `/agentic-interview`;
+  craft (when `craft_skills: true`) `/agentic-debug`, `/agentic-api`, `/agentic-security`,
+  `/agentic-migrate`. `/agentic-audit` runs only on explicit request.
 - **Domain context:** `.agentic/context/CONTEXT.md`.
-- **Core invariant:** every ticket satisfies its Done Contract and the standing DoD, passes `scripts/verify.sh` with a fresh stamp, floor-guard, and — for MEDIUM/HIGH — a same-agent critic whose claim commands are in the action journal (plus a security report on HIGH `risk_paths`) before closing. A system audit is not a merge check. Stage transitions go through `scripts/gate.sh`.
+- **Decisions:** `.agentic/context/adr/` — [0001 Enforcement vs convention](context/adr/0001-enforcement-vs-convention.md).
 
----
+## Out of Scope
 
-## 2. Decisions So Far
-
-- **ADR 0001 — Enforcement vs convention:** scripts authorize; skills advise; LOW fast lane is sacred; human on-the-loop = blast expansion + HIGH merge. See `.agentic/context/adr/0001-enforcement-vs-convention.md`.
-
----
-
-## 3. Active Frontier (Unblocked Tickets)
-
-<!-- Host projects fill this. The template ships empty. -->
-
----
-
-## 4. Fog of War / Blocked on Alignment
-
-<!-- Tickets whose blast radius expands scope, awaiting /agentic-grill resolution. -->
-
----
-
-## 5. Out of Scope
-
-- Live forge branch-protection settings (workflow ships; humans click the GitHub UI).
-- PID registry for long-running dev servers (kill/pkill is ask-gated only).
-- Harness-owned OS sandbox / cloud IAM (document in CONTEXT; cannot enforce from bash).
+- Live forge branch-protection settings (the workflow ships; humans set required checks).
+- A PID registry for long-running dev servers.
+- Harness-owned OS sandboxes and cloud IAM (tool sandboxes are configured, not enforced from bash).

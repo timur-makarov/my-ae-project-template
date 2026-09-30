@@ -1,0 +1,13 @@
+# Codex prompts before these, mirroring the "ask" class of scripts/hooks/guard.sh.
+# The deny class is enforced by the hook itself (.codex/hooks.json).
+
+prefix_rule(pattern = ["sudo"], decision = "prompt", justification = "Needs root.")
+prefix_rule(pattern = ["su"], decision = "prompt", justification = "Switches user.")
+prefix_rule(pattern = ["doas"], decision = "prompt", justification = "Needs root.")
+prefix_rule(pattern = ["crontab"], decision = "prompt", justification = "Changes scheduled jobs.")
+prefix_rule(pattern = ["launchctl"], decision = "prompt", justification = "Changes system services.")
+prefix_rule(pattern = ["systemctl"], decision = "prompt", justification = "Changes system services.")
+prefix_rule(pattern = ["git", "reset", "--hard"], decision = "prompt", justification = "Discards uncommitted work.")
+prefix_rule(pattern = ["git", "clean"], decision = "prompt", justification = "Deletes untracked files.")
+prefix_rule(pattern = ["git", "checkout", "--", "."], decision = "prompt", justification = "Discards all uncommitted changes.")
+prefix_rule(pattern = ["git", "restore", "."], decision = "prompt", justification = "Discards all uncommitted changes.")

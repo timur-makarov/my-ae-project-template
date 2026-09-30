@@ -1,16 +1,14 @@
 # Handoff — Ticket NN
 
-> Written by `/agentic-handoff` when a session ends mid-ticket.
-> The next session (or agent) resumes from this file + the ledger, not from memory.
+> Written by `/agentic-handoff` when a session ends mid-ticket. `scripts/gate.sh next NN`
+> already knows the mechanical state; this file carries what it can't: the thinking.
 
-- **Ticket:** `.agentic/tickets/open/NN-slug.md` — status: `<status>`
-- **Branch / worktree:** `<branch>` at `<path>` (or "not yet created")
-- **Ledger:** `.agentic/journal/NN-ledger.md` — trust it and `git log` over any recollection
+- **Branch / worktree:** `ticket/NN-slug` at `<path>`
+- **`gate.sh next` said:** `<paste the NEXT line>`
 
 ## State of the work
 
-- **Last completed piece:** <piece + commit range, from the ledger>
-- **In flight:** <what is half-done right now, in which files>
+- **In flight:** <what is half-done right now, in which files (`git status` pasted)>
 - **Verified so far:** <claims with evidence pointers that need no re-checking>
 - **Decayed / re-verify on resume:** <mutable-state facts that were true then and may not be now>
 
@@ -19,12 +17,6 @@
 <One sentence: the exact question the next action must answer. If you cannot write
 this sentence, the state is "confused" — say so explicitly rather than faking a step.>
 
-## Next command
-
-```
-<the literal next command or dispatch to run>
-```
-
 ## Traps
 
-- <anything the resuming agent could plausibly do that would damage the work — wrong branch, stale build dir, half-applied migration>
+- <anything the resuming agent could plausibly do that would damage the work>

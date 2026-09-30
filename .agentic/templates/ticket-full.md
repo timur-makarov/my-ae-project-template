@@ -4,8 +4,6 @@ type: directive
 risk_tier: MEDIUM
 template: full
 blocked_by: none
-branch: —
-claimed_by: ""
 reversibility: reversible   # reversible | expand-contract | irreversible
 rollback: n/a
 new_deps: []
@@ -38,17 +36,17 @@ scope_paths:
 
 ## Definition of Done
 
-Standing bar (see `.agentic/references/dod.md`). Unchecked boxes fail `gate.sh archive`.
+Standing bar: `.agentic/references/dod.md`. The reviewer holds the diff to it.
 
-- [ ] Correctness: acceptance checks ran; tests failed without the change and pass with it
-- [ ] Quality: scoped, no unrelated refactors, lint/types clean
-- [ ] Integration: migrations / flags / compat accounted for (or N/A)
-- [ ] Rollback: `rollback:` above is a real command, expand-contract plan, or n/a with reason
+- Correctness: acceptance checks ran; tests fail without the change and pass with it
+- Quality: scoped, no unrelated refactors, lint/types clean
+- Integration: migrations / flags / compat accounted for (or N/A)
+- Rollback: `rollback:` above is a real command, expand-contract plan, or n/a with reason
 
 ## Constraints & Residue
 
-- [ ] **C1:** <constraint, verbatim where possible>
-- [ ] **C2:** <implied constraint>
+- **C1:** <constraint, verbatim where possible>
+- **C2:** <implied constraint>
 
 **Residue (deliberately not covered):**
 - <named uncovered area — a decision, not an accident>
@@ -68,7 +66,7 @@ Standing bar (see `.agentic/references/dod.md`). Unchecked boxes fail `gate.sh a
 ## Load-Bearing Assumptions
 
 <!-- Only claims the outcome depends on. Verify ASSUMED entries before writing code.
-     Upgrade every ASSUMED row before gate.sh pr. -->
+     Upgrade every ASSUMED row before ship (the gate refuses ASSUMED rows). -->
 
 | # | Claim | Status (VERIFIED / INFERRED / ASSUMED) | Evidence pointer | Flip condition & check cost |
 |---|---|---|---|---|
@@ -82,14 +80,14 @@ Standing bar (see `.agentic/references/dod.md`). Unchecked boxes fail `gate.sh a
      Last piece is always goal-backward verification. -->
 
 ### Piece 0 — <shared assumption, if any>
-- **Claim:** <verdict-bearing assertion> — **Check:** `<command>` — **Status:** [ ]
+- **Claim:** <verdict-bearing assertion> — **Check:** `<command>`
 
 ### Piece 1 — <kill-shot / cheapest disambiguator>
-- **Claim:** — **Check:** `<command>` — **Status:** [ ]
+- **Claim:** — **Check:** `<command>`
 
 ### Piece N — Goal-backward verification
 - **Claim:** the originally requested scenario works end-to-end; constraints C1..CN hold against the final artifact
-- **Check:** `<end-to-end reproduction command>` — **Status:** [ ]
+- **Check:** `<end-to-end reproduction command>`
 
 ## Capability Map
 
@@ -100,18 +98,11 @@ n/a
 
 ## Resolution
 
-<!-- Sentence 1 answering the request. Proof sketch with pointers.
-     Must include weakest-premise label, named flip condition, and
-     `Rulings: none` or the list of ledger Ruling: lines. No unhedged
-     should/probably/likely. -->
+<!-- Filled at completion: sentence 1 answers the request; proof sketch with file:line
+     pointers and commands; any autonomous decisions as `Ruling:` lines (a test-count
+     drop needs one naming the removed tests). -->
 
 ### Risk & Flip Conditions
 - **Weakest premise:** <claim + label>
 - **Untested paths:** <named>
 - **Flip condition:** <the observation that would reverse this>
-- **Rulings:** none
-
-### Critic Sign-off
-- [ ] Isolated critic ran on evidence only (diff + test output + Done Contract, zero narrative) — report: `.agentic/journal/NN-critic.md`
-- [ ] Verdict `APPROVED` with epicycle count ≤ 1
-- [ ] HIGH + auth/payment/migrations/`.cursor`: security fan-out report `.agentic/journal/NN-critic-security.md`

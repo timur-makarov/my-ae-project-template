@@ -28,7 +28,7 @@ Open a new ticket via `/agentic-task` (type `diagnosis`, risk tier at least the 
 
 This is the step that makes the environment improve itself:
 
-- **lessons.md** — append: `- [NN] YYYY-MM-DD <defect that escaped> — <the check that would have caught it> — cite:path needle:"token"`.
+- **Lessons** — in the fixing ticket's `.agentic/journal/lessons/NN.md`: `- [NN] YYYY-MM-DD <defect that escaped> — <the check that would have caught it> — cite:path needle:"token"`.
 - **metrics.jsonl** — read recent `gate` / `critic` events: a critic that has approved every MEDIUM ticket first-pass is a broken critic.
 - **Check or guard** — if a command or a `guard.sh` pattern would have caught the escaping defect, add that `Check:` or that pattern.
 - **CONTEXT.md** — if the regression revealed an invariant or risk boundary nobody had written down, write it down now (`cite:path needle:"token"` on the row).

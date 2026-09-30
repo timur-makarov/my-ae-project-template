@@ -5,7 +5,9 @@
 #   Runs verify.test, verify.lint, verify.typecheck in order (skipping empty ones).
 #   With --e2e, also runs verify.e2e last.
 #   Fails on the first non-zero exit and prints exactly which step died.
-#   Every run appends a stamp to .agentic/journal/verify-stamps.jsonl.
+#   Every run appends a stamp to .agentic/state/verify-stamps.jsonl (gitignored).
+#   DIRTY means a product file (outside .agentic/tickets and .agentic/journal) was
+#   modified or untracked when the run started.
 #
 # Protocol lines: VERIFY, HEAD, DIRTY, EXIT, STAMP
 set -u
@@ -38,7 +40,7 @@ declare -a STEP_CMDS=()
 TEST_OUTPUT=""
 
 write_stamp() {
-  mkdir -p "$JOURNAL"
+  mkdir -p "$STATE"
   local ts steps_json cmd_json
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   steps_json="{"
@@ -57,8 +59,8 @@ write_stamp() {
   cmd_json="$cmd_json}"
   printf '{"ts":"%s","head":"%s","dirty":%s,"steps":%s,"commands":%s,"e2e":%s,"exit":%s,"test_count":%s}\n' \
     "$ts" "$HEAD_SHA" "$DIRTY" "$steps_json" "$cmd_json" "$E2E" "$EXIT_CODE" "$TEST_COUNT" \
-    >> "$JOURNAL/verify-stamps.jsonl"
-  protocol STAMP "$JOURNAL/verify-stamps.jsonl"
+    >> "$STATE/verify-stamps.jsonl"
+  protocol STAMP "$STATE/verify-stamps.jsonl"
   protocol HEAD "$HEAD_SHA"
   protocol DIRTY "$DIRTY"
   protocol EXIT "$EXIT_CODE"

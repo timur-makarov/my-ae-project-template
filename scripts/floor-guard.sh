@@ -24,21 +24,19 @@ fi
 has_git || { echo "floor-guard: not a git repo" >&2; exit 2; }
 
 if [ -z "$BASE" ]; then
-  BASE="$(base_branch)"
-  [ -z "$BASE" ] && BASE="dev"
+  if ! BASE="$(base_ref)"; then
+    if [ -n "${CI:-}" ]; then
+      echo "floor-guard: base '$(base_branch)' not found (tried $(base_branch), origin/$(base_branch)) — fetch it" >&2
+      exit 2
+    fi
+    echo "floor-guard: WARNING: base '$(base_branch)' not found; checking uncommitted changes only" >&2
+    BASE=HEAD
+  fi
 fi
 
 merge_base=""
 if git -C "$ROOT" rev-parse --verify "$BASE" >/dev/null 2>&1; then
   merge_base="$(git -C "$ROOT" merge-base "$BASE" HEAD 2>/dev/null || true)"
-fi
-if [ -z "$merge_base" ]; then
-  for cand in "origin/$BASE" origin/main origin/master main master HEAD; do
-    if git -C "$ROOT" rev-parse --verify "$cand" >/dev/null 2>&1; then
-      merge_base="$(git -C "$ROOT" merge-base "$cand" HEAD 2>/dev/null || true)"
-      [ -n "$merge_base" ] && break
-    fi
-  done
 fi
 if [ -z "$merge_base" ]; then
   # First commit / unborn: compare against empty tree.

@@ -2,64 +2,26 @@
   "version": 1,
   "hooks": {
     "sessionStart": [
-      {
-        "command": ".cursor/hooks/session-start.sh",
-        "timeout": 15
-      }
+      { "command": "./scripts/hooks/session-start.sh", "timeout": 30 }
     ],
     "beforeShellExecution": [
-      {
-        "command": ".cursor/hooks/guard.sh",
-        "timeout": 10,
-        "failClosed": true
-      }
+      { "command": "./scripts/hooks/guard.sh", "timeout": 10, "failClosed": true }
     ],
     "afterShellExecution": [
-      {
-        "command": ".cursor/hooks/audit.sh",
-        "timeout": 10
-      }
+      { "command": "./scripts/hooks/audit.sh", "timeout": 10 }
     ],
     "preToolUse": [
-      {
-        "command": ".cursor/hooks/protect.sh",
-        "matcher": "Write|StrReplace|Delete|EditNotebook|Read",
-        "timeout": 10,
-        "failClosed": true
-      },
-      {
-        "command": ".cursor/hooks/mcp-guard.sh",
-        "matcher": "WebFetch|WebSearch",
-        "timeout": 10,
-        "failClosed": true
-      },
-      {
-        "command": ".cursor/hooks/task-guard.sh",
-        "matcher": "Task",
-        "timeout": 10,
-        "failClosed": true
-      }
+      { "command": "./scripts/hooks/protect.sh", "matcher": "Write|StrReplace|Delete|EditNotebook|Read", "timeout": 10, "failClosed": true },
+      { "command": "./scripts/hooks/mcp-guard.sh", "matcher": "WebFetch|WebSearch", "timeout": 10, "failClosed": true }
     ],
     "beforeReadFile": [
-      {
-        "command": ".cursor/hooks/protect.sh",
-        "timeout": 10,
-        "failClosed": true
-      }
+      { "command": "./scripts/hooks/protect.sh", "timeout": 10, "failClosed": true }
     ],
     "beforeMCPExecution": [
-      {
-        "command": ".cursor/hooks/mcp-guard.sh",
-        "timeout": 10,
-        "failClosed": true
-      }
+      { "command": "./scripts/hooks/mcp-guard.sh", "timeout": 10, "failClosed": true }
     ],
     "stop": [
-      {
-        "command": ".cursor/hooks/stop.sh",
-        "timeout": 10,
-        "loop_limit": 0
-      }
+      { "command": "./scripts/hooks/stop.sh", "timeout": 30, "loop_limit": 5 }
     ]
   }
 }

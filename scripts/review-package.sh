@@ -2,12 +2,12 @@
 # review-package.sh — bundle a git range into one file a reviewer/critic reads
 # in a single pass, so the diff never enters the controller's context.
 #
-# Usage: scripts/review-package.sh BASE HEAD [LABEL]
+# Usage: scripts/review-package.sh BASE HEAD [OUT]
 #   BASE/HEAD: any git revisions. Record BASE before dispatching an implementer;
 #   never use HEAD~1 for multi-commit work (it silently drops earlier commits).
-#   LABEL: optional filename stem (default: <base7>-<head7>).
+#   OUT: output file (default: .agentic/state/reviews/<base7>-<head7>.md).
 #
-# Prints the path of the package it wrote. Package goes to .agentic/journal/reviews/.
+# Prints the path of the package it wrote. gate.sh critic calls this itself.
 set -eu
 
 if [ $# -lt 2 ]; then
@@ -21,11 +21,8 @@ git rev-parse --verify --quiet "$HEAD^{commit}" >/dev/null || { echo "review-pac
 
 B7=$(git rev-parse --short=7 "$BASE")
 H7=$(git rev-parse --short=7 "$HEAD")
-LABEL="${3:-$B7-$H7}"
-
-OUT_DIR=".agentic/journal/reviews"
-mkdir -p "$OUT_DIR"
-OUT="$OUT_DIR/$LABEL.md"
+OUT="${3:-.agentic/state/reviews/$B7-$H7.md}"
+mkdir -p "$(dirname "$OUT")"
 
 {
   echo "# Review package: $B7..$H7"

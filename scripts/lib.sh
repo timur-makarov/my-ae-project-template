@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib.sh — shared helpers for agentic scripts (NOT sourced by failClosed hooks).
+# lib.sh — shared helpers for agentic scripts (NOT sourced by hooks).
 # Scripts: source "$(dirname "$0")/lib.sh"
 [ -n "${AGENTIC_LIB_SOURCED:-}" ] && return 0
 AGENTIC_LIB_SOURCED=1
@@ -16,6 +16,9 @@ STATE="$ROOT/.agentic/state"
 TICKETS_OPEN="$ROOT/.agentic/tickets/open"
 TICKETS_CLOSED="$ROOT/.agentic/tickets/closed"
 
+# Human-written records. Editing them never makes evidence stale.
+NON_PRODUCT=(':(exclude).agentic/tickets' ':(exclude).agentic/journal')
+
 protocol() { printf '%s: %s\n' "$1" "$2"; }
 
 die() { echo "$1" >&2; exit "${2:-1}"; }
@@ -23,26 +26,100 @@ die() { echo "$1" >&2; exit "${2:-1}"; }
 has_git() { git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; }
 
 current_head() {
-  if has_git; then
-    git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo "unborn"
-  else
-    echo "unborn"
-  fi
+  git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo "unborn"
 }
 
+# Branch name; in a detached CI checkout, the PR head ref.
+current_branch() {
+  local b
+  b="$(git -C "$ROOT" branch --show-current 2>/dev/null || true)"
+  [ -z "$b" ] && b="${GITHUB_HEAD_REF:-}"
+  printf '%s' "$b"
+}
+
+# "true" when a product file (anything outside tickets/ and journal/) is
+# modified or untracked.
 is_dirty() {
-  if has_git; then
-    if [ -n "$(git -C "$ROOT" status --porcelain 2>/dev/null)" ]; then
-      echo true
-    else
-      echo false
-    fi
-  else
+  if ! has_git; then echo true; return; fi
+  if [ -n "$(git -C "$ROOT" status --porcelain --untracked-files=all -- . "${NON_PRODUCT[@]}" 2>/dev/null)" ]; then
     echo true
+  else
+    echo false
   fi
 }
 
-base_branch() { config_get "base_branch"; }
+# Exit 0 when no product file differs between SHA and HEAD.
+product_same() {
+  local sha="$1"
+  [ -n "$sha" ] && [ "$sha" != "unborn" ] || return 1
+  git -C "$ROOT" diff --quiet "$sha" HEAD -- . "${NON_PRODUCT[@]}" 2>/dev/null
+}
+
+# Evidence recorded at HEAD=$1 with dirty=$2 still describes the tree.
+evidence_fresh() {
+  local head="$1" dirty="$2"
+  [ "$dirty" = "false" ] || return 1
+  [ "$(is_dirty)" = "false" ] || return 1
+  product_same "$head"
+}
+
+# Changes whenever anything in the worktree changes (committed or not).
+worktree_fp() {
+  {
+    git -C "$ROOT" rev-parse HEAD 2>/dev/null
+    git -C "$ROOT" diff HEAD --binary 2>/dev/null
+    git -C "$ROOT" ls-files -o --exclude-standard 2>/dev/null | while IFS= read -r f; do
+      printf '%s ' "$f"
+      git -C "$ROOT" hash-object "$f" 2>/dev/null
+    done
+  } | git hash-object --stdin
+}
+
+sha_text() { git hash-object --stdin; }
+sha_file() { git hash-object "$1" 2>/dev/null || echo none; }
+
+base_branch() {
+  local b
+  b="$(config_get "base_branch")"
+  printf '%s' "${b:-main}"
+}
+
+# The ref to diff against: base_branch, else origin/base_branch.
+# Empty when neither resolves (callers decide; in CI that is a failure).
+base_ref() {
+  local base cand
+  base="$(base_branch)"
+  for cand in "$base" "origin/$base"; do
+    if git -C "$ROOT" rev-parse --verify --quiet "$cand^{commit}" >/dev/null 2>&1; then
+      printf '%s' "$cand"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Files changed since the merge-base with base, plus uncommitted and untracked.
+# Without a base ref: uncommitted changes only (gate.sh merge_base_ok fails CI).
+diff_files() {
+  has_git || return 0
+  local ref mb
+  if ref="$(base_ref)"; then
+    mb="$(git -C "$ROOT" merge-base "$ref" HEAD 2>/dev/null || true)"
+  fi
+  {
+    if [ -n "${mb:-}" ]; then
+      git -C "$ROOT" diff --name-only "$mb" 2>/dev/null
+    else
+      git -C "$ROOT" diff --name-only HEAD 2>/dev/null
+    fi
+    git -C "$ROOT" ls-files -o --exclude-standard 2>/dev/null
+  } | sort -u
+}
+
+# diff_files without tickets/ and journal/.
+product_diff_files() {
+  diff_files | grep -v -E '^\.agentic/(tickets|journal)/' || true
+}
 
 # Scalar from config. Nested: "verify.test", "risk.low_fast_lane", "scope.strict".
 # Top-level: "base_branch".
@@ -163,6 +240,32 @@ ticket_yaml_list() {
   ' "$file"
 }
 
+# Rewrite one front-matter scalar in place.
+ticket_set() {
+  local file="$1" key="$2" val="$3" tmp
+  tmp="$(mktemp)"
+  awk -v key="$key" -v val="$val" '
+    /^---[[:space:]]*$/ { n++ }
+    n == 1 && !done && $0 ~ "^" key ":" { print key ": " val; done = 1; next }
+    { print }
+  ' "$file" > "$tmp" && mv "$tmp" "$file"
+}
+
+# Done Contract Check: commands, one per line, backticks stripped.
+dc_checks() {
+  awk '/^## Done Contract/{inb=1;next} /^## /{inb=0} inb && /Check:/ {print}' "$1" \
+    | while IFS= read -r line; do
+        cmd="${line#*Check:}"
+        case "$cmd" in *\`*\`*) cmd="$(printf '%s' "$cmd" | sed -E 's/^[^`]*`([^`]*)`.*/\1/')" ;; esac
+        cmd="$(printf '%s' "$cmd" | tr -d '`' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        [ -n "$cmd" ] && printf '%s\n' "$cmd"
+      done
+}
+
+dc_assertion_count() {
+  awk '/^## Done Contract/{inb=1;next} /^## /{inb=0} inb && /^[0-9]+\./{c++} END{print c+0}' "$1"
+}
+
 ticket_file() {
   local nn="$1" f
   for f in "$TICKETS_OPEN"/"$nn"-*.md "$TICKETS_CLOSED"/"$nn"-*.md; do
@@ -173,8 +276,30 @@ ticket_file() {
   return 1
 }
 
+ticket_title() {
+  grep -m1 '^# Ticket' "$1" | sed -E 's/^# Ticket [0-9]+[[:space:]]*[—-]+[[:space:]]*//'
+}
+
 nn_pad() {
   printf '%02d' "$((10#$1))"
+}
+
+# NN of the ticket branch this worktree is on (empty off a ticket branch).
+branch_nn() {
+  local prefix b n
+  prefix="$(config_get branch_prefix)"
+  [ -z "$prefix" ] && prefix="ticket/"
+  b="$(current_branch)"
+  case "$b" in
+    "$prefix"[0-9]*) ;;
+    *) return 0 ;;
+  esac
+  n="${b#"$prefix"}"
+  n="${n%%-*}"
+  case "$n" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  nn_pad "$n"
 }
 
 tier_rank() {
@@ -268,15 +393,15 @@ extract_test_count() {
 }
 
 metrics_append() {
-  mkdir -p "$JOURNAL"
+  mkdir -p "$STATE"
   local ts
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   # remaining args are JSON object body without braces: "stage":"pr","nn":"01"
-  printf '{"ts":"%s",%s}\n' "$ts" "$1" >> "$JOURNAL/metrics.jsonl"
+  printf '{"ts":"%s",%s}\n' "$ts" "$1" >> "$STATE/metrics.jsonl"
 }
 
 last_stamp() {
-  local f="$JOURNAL/verify-stamps.jsonl"
+  local f="$STATE/verify-stamps.jsonl"
   [ -f "$f" ] || return 1
   tail -1 "$f"
 }
@@ -286,37 +411,97 @@ json_get() {
   if command -v jq >/dev/null 2>&1; then
     printf '%s' "$json" | jq -r --arg k "$key" '.[$k] | if type=="object" then tojson else . end'
   else
-    python3 -c 'import json,sys; d=json.loads(sys.argv[1]); v=d.get(sys.argv[2]); print(v if not isinstance(v, (dict,list)) else json.dumps(v))' "$json" "$key"
+    python3 -c 'import json,sys; d=json.loads(sys.argv[1]); v=d.get(sys.argv[2]); print(json.dumps(v) if isinstance(v, (dict,list,bool)) or v is None else v)' "$json" "$key"
   fi
-}
-
-active_nn() {
-  local f="$STATE/active-ticket"
-  [ -f "$f" ] && tr -d '[:space:]' < "$f"
-}
-
-legal_status_transition() {
-  local from="$1" to="$2" key
-  [ "$from" = "$to" ] && return 0
-  # Use :: not > — bash 3.2 treats > in case patterns as redirection.
-  key="${from}::${to}"
-  case "$key" in
-    open::in-progress|open::blocked-on-alignment) return 0 ;;
-    blocked-on-alignment::open|blocked-on-alignment::in-progress) return 0 ;;
-    in-progress::ready-for-critic|in-progress::ready-for-review|in-progress::blocked-on-alignment|in-progress::open) return 0 ;;
-    ready-for-critic::ready-for-review|ready-for-critic::in-progress) return 0 ;;
-    ready-for-review::closed|ready-for-review::in-progress) return 0 ;;
-    *) return 1 ;;
-  esac
 }
 
 relpath_from() {
   local p="$1"
   case "$p" in
     "$ROOT"/*) echo "${p#"$ROOT"/}" ;;
-    /*) echo "$p" ;;
     *) echo "$p" ;;
   esac
+}
+
+# Run each line of CMDS_FILE with bash -c under a timeout, in ROOT.
+# Writes {"exit":N,"head","dirty","key","results":[{"cmd","exit","secs","log"}]}
+# to OUT_JSON. head/dirty describe the tree when the run started; KEY is an
+# opaque caller value (e.g. a hash of the command list) that must still match.
+# Prints one line per command; a failing command also prints its output tail.
+run_commands() {
+  local cmds_file="$1" out_json="$2" label="${3:-run}" key="${4:-}" timeout
+  timeout="$(config_get limits.command_timeout_secs)"
+  [ -z "$timeout" ] && timeout=900
+  mkdir -p "$STATE/logs"
+  python3 - "$cmds_file" "$out_json" "$label" "$timeout" "$ROOT" "$STATE/logs" \
+    "$(current_head)" "$(is_dirty)" "$key" <<'PY'
+import json, os, subprocess, sys, time
+cmds_file, out_json, label, timeout, root, logdir, head, dirty, key = sys.argv[1:10]
+timeout = int(timeout)
+cmds = [l.rstrip("\n") for l in open(cmds_file) if l.strip()]
+results, worst = [], 0
+for i, cmd in enumerate(cmds):
+    t0 = time.time()
+    log = os.path.join(logdir, f"{label}-{i + 1}.log")
+    try:
+        p = subprocess.run(["bash", "-c", cmd], cwd=root, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, timeout=timeout)
+        code, out = p.returncode, p.stdout.decode("utf-8", "replace")
+    except subprocess.TimeoutExpired as e:
+        code = 124
+        out = (e.stdout or b"").decode("utf-8", "replace") + f"\n[timed out after {timeout}s]\n"
+    secs = round(time.time() - t0, 1)
+    open(log, "w").write(out)
+    results.append({"cmd": cmd, "exit": code, "secs": secs, "log": log})
+    if code == 0:
+        print(f"{label}: ok   ({secs}s) {cmd}")
+    else:
+        worst = 1
+        print(f"{label}: FAIL (exit {code}, {secs}s) {cmd}")
+        tail = out.strip().splitlines()[-40:]
+        for line in tail:
+            print(f"    {line}")
+        print(f"    full log: {log}")
+if not cmds:
+    worst = 1
+    print(f"{label}: FAIL no commands to run")
+json.dump({"exit": worst, "head": head, "dirty": dirty == "true", "key": key,
+           "results": results}, open(out_json, "w"))
+sys.exit(worst)
+PY
+}
+
+# Last **Verdict:** line's enum value.
+report_verdict() {
+  awk '
+    /^\*\*Verdict:\*\*/ || /^- \*\*Verdict:\*\*/ { last=$0 }
+    END { print last }
+  ' "$1" | grep -oE 'APPROVED|CHANGES_REQUESTED|REOPEN_REQUIRED' | head -1
+}
+
+# **Head:** <sha> — the commit the reviewer evaluated.
+report_head() {
+  grep -m1 -E '^(- )?\*\*Head:\*\*' "$1" 2>/dev/null | grep -oE '[0-9a-f]{7,40}' | head -1
+}
+
+# Commands from the report's ## Claims table (second column).
+claim_commands() {
+  awk '
+    BEGIN { FS="|" }
+    /^## Claims/ { in_table=1; next }
+    in_table && /^## / { in_table=0 }
+    in_table && /^\|/ {
+      gsub(/\\\|/, "\001")
+      if ($0 ~ /[Cc]laim/ && $0 ~ /[Cc]ommand/) next
+      if ($0 ~ /^[|][-: |]+$/) next
+      cmd=$3
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", cmd)
+      gsub(/`/, "", cmd)
+      gsub(/\001/, "|", cmd)
+      if (cmd == "" || cmd == "command" || cmd ~ /^</) next
+      print cmd
+    }
+  ' "$1"
 }
 
 # Added package names from lockfile diffs vs base...HEAD (stdout, one per line).

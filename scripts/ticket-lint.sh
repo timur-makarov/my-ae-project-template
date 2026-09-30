@@ -28,7 +28,10 @@ ticket_exists() {
   id="$(echo "$id" | tr -d ' ')";
   [ -z "$id" ] && return 1
   [ "$id" = "none" ] && return 0
-  ticket_file "$(nn_pad "$id")" >/dev/null 2>&1
+  id="$(nn_pad "$id")"
+  ticket_file "$id" >/dev/null 2>&1 && return 0
+  # Reserved by gate.sh new, or living on its ticket branch in another worktree.
+  git -C "$ROOT" rev-parse --verify --quiet "refs/agentic/nn/$id" >/dev/null 2>&1
 }
 
 # Very small cycle detector: walk blocked_by refs.
@@ -63,7 +66,7 @@ for f in "${FILES[@]}"; do
 
   status="$(ticket_yaml "$f" status)"
   case "$status" in
-    open|in-progress|blocked-on-alignment|ready-for-critic|ready-for-review|closed) ;;
+    open|in-progress|blocked-on-alignment|closed) ;;
     "") err "$f" "missing status in front matter" ;;
     *)  err "$f" "invalid Status: '$status'" ;;
   esac
@@ -126,13 +129,9 @@ for f in "${FILES[@]}"; do
             continue
             ;;
         esac
-        case "$bare" in
-          /*|*/*|scripts/*|make|make\ *|cargo\ *|pytest*|go\ test*|npm\ *|pnpm\ *|yarn\ *|bash\ *|true|/bin/true)
-            ;;
-          *)
-            err "$f" "Check: must name a runnable command (got '$payload')"
-            ;;
-        esac
+        if [ "$has_tick" -eq 0 ]; then
+          err "$f" "Check: put the runnable command in backticks (got '$payload')"
+        fi
       done < <(awk '/^## Done Contract/{inb=1;next} /^## /{inb=0} inb && /Check:/ {print}' "$f")
     fi
   fi
@@ -244,33 +243,6 @@ for f in "${FILES[@]}"; do
     fi
   fi
 
-  if [ "$status" = "in-progress" ]; then
-    claimed="$(ticket_yaml "$f" claimed_by)"
-    if [ -z "$claimed" ] || [ "$claimed" = '""' ]; then
-      warn "$f" "in-progress ticket has empty claimed_by"
-    fi
-  fi
-
-  # Status transition vs last committed copy (skip if not in git).
-  if has_git && git -C "$ROOT" ls-files --error-unmatch "$f" >/dev/null 2>&1; then
-    rel="$(relpath_from "$f")"
-    old="$(git -C "$ROOT" show "HEAD:$rel" 2>/dev/null || true)"
-    if [ -n "$old" ]; then
-      old_status="$(printf '%s' "$old" | awk '/^status:/{sub(/^status:[[:space:]]*/,""); print; exit}')"
-      if [ -n "$old_status" ] && [ "$old_status" != "$status" ]; then
-        if ! legal_status_transition "$old_status" "$status"; then
-          if ! grep -q '^Ruling:' "$f" && ! grep -q 'Ruling:' "$ROOT/.agentic/journal/"* 2>/dev/null; then
-            err "$f" "illegal status jump $old_status -> $status (needs a legal transition or a Ruling:)"
-          elif ! legal_status_transition "$old_status" "$status"; then
-            # regressions allowed with Ruling:
-            if ! grep -q 'Ruling:' "$f" "$ROOT/.agentic/journal/$(basename "$f" | sed 's/-.*//')-ledger.md" 2>/dev/null; then
-              err "$f" "status regression $old_status -> $status requires a Ruling:"
-            fi
-          fi
-        fi
-      fi
-    fi
-  fi
 done
 
 if [ "$fail" -eq 0 ]; then

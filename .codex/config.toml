@@ -1,0 +1,9 @@
+# Codex project config (loaded when the project is trusted). Hooks: .codex/hooks.json.
+# Codex hooks can't "ask", so the guard's ask-class commands are prompt rules in
+# .codex/rules/agentic.rules and everything else runs inside the sandbox.
+
+sandbox_mode = "workspace-write"
+approval_policy = "on-request"
+
+[sandbox_workspace_write]
+network_access = true   # must match guard.network in .agentic/config.yml (env-lint checks)

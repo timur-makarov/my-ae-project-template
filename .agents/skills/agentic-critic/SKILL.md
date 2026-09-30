@@ -1,47 +1,52 @@
 ---
 name: agentic-critic
-description: "Use when a MEDIUM or HIGH ticket's diff needs an adversarial pass before it ships. The fast lane skips this hop."
+description: "Use when a MEDIUM or HIGH ticket's diff needs an adversarial review before it ships, or when you are the reviewer handed a brief. The LOW fast lane skips this."
 ---
 
-# Agentic Critic
+# Agentic Critic: The Reviewer
 
-Scripts already run the ticket's `Check:` commands and refuse a diff that leaves scope. Do not repeat those two facts. The job is to take each claim in the ticket and try to break it on the code that actually changed.
+The author doesn't review its own work. `scripts/gate.sh advance NN` builds a payload in
+`.agentic/state/payload-NN/` and names a brief. A separate agent seat reads it and writes the report.
 
-The fast lane (LOW and `risk.low_fast_lane`) skips this hop. When the hop runs, the same agent writes the report. Do not spawn a subagent for this report. `models.critic` is a label until a separate process is started; this hop does not start one.
+## Spawning (the author)
 
-**Seat:** `same-agent` on MEDIUM. That is the whole derivation: each claim has a command in the action journal. A sentence that says the claim held, with no command, is not a verdict.
+- **Mode A** (default, `critic.command: ""`): spawn the `agentic-evaluator` subagent (Cursor
+  `.cursor/agents/`, Claude `.claude/agents/`; in Codex, start a fresh session or subagent with this
+  skill) and tell it: "Review per `.agentic/state/payload-NN/BRIEF.md`." If a `BRIEF-security.md`
+  exists, spawn a second evaluator with that brief in the same turn.
+- **Mode B** (`critic.command` set): `advance` runs the reviewer headless itself. Nothing to spawn.
 
-## Scope
+Then `advance`: it re-runs every command in the report's Claims table. A report changed after a
+Mode B reviewer wrote it is refused.
 
-The ticket's claims and the diff. For each Done Contract claim, name one input that should break it, run that input, and put the command in the Claims table. A claim that says "all" or "never" gets a second row. `type: diagnosis`, and any number, still need the rival or the words `not measured`. Sibling callers of a modified function are one sentence under `Not in this contract`, or one claim row.
+## Reviewing (the evaluator)
 
-A finding is a line in the diff that does not do what the claim says, or a command that failed against that code. Cite the changed `file:line`, or the command and the fact that it failed. There is no cap on real misses.
+The brief names the evidence (`contract.md`, `diff.md`, `checks.json`, `verify-stamp.json`) and
+the report path. You may read any file and run read-only commands; edit nothing but the report.
+The gate has already run the Done Contract checks and scope rules, so don't restate them.
 
-The read-only payload from `scripts/gate.sh critic` is for the HIGH security persona. This report's evidence is the Claims table plus the action journal.
+1. **Each claim, attacked.** For each Done Contract assertion, pick the input most likely to break
+   it, run it, and record the command in the Claims table. A claim that says "all" or "never" gets
+   a second row. `type: diagnosis` and any number need the rival, or the words `not measured`.
+2. **The tests.** Would they fail without this change? Read them against the diff. A test that
+   passes on the old code proves nothing; say so as a finding.
+3. **The diff.** A finding is a changed line that doesn't do what the claim says, or a command
+   that failed. Cite `file:line` or the command. There's no cap on real misses; imagined future
+   files are not findings. Sibling callers of a changed function get one sentence or one claim row.
+4. **Standing bar:** `.agentic/references/dod.md` for the ticket's tier.
 
-## Out of scope
+Write the report from `.agentic/templates/critic_report.md`, with the `**Head:**` line exactly as
+the brief gives it and one `**Verdict:**`:
 
-- Files that are not in the diff and not in the fixtures the check already uses.
-- A demand that the author prove no future file can break the claim.
-- A second shape after a real miss has already been named.
-
-One sentence under `Not in this contract` is allowed. It does not set `CHANGES_REQUESTED` and it does not start another pass.
-
-## One report
-
-Write `.agentic/journal/<NN>-critic.md` from `.agentic/templates/critic_report.md`. One verdict line, one enum value. Run `scripts/gate.sh critic <NN>` once to assemble the payload; it refuses a second payload if that report already exists. `scripts/gate.sh critic <NN> --again` asks.
-
-`scripts/artifact-lint.sh` rejects a verdict menu, an `APPROVED` report with no claim command, a missing `Seat:` line, and a finding that cites neither a changed `file:line` nor a command that was run and failed. `scripts/evidence-check.sh --hostile` requires each Claims-table command to appear in `actions-*.jsonl`. Zero commands cannot be `APPROVED`.
-
-## Verdict
-
-`APPROVED` when every claim row's command is in the journal and held. `CHANGES_REQUESTED` when a cited line or a failed command breaks a claim. `REOPEN_REQUIRED` when the claim's approach is wrong, not a line. Two patches defending one conclusion is the epicycle: reopen, don't patch again.
+- `APPROVED`: every claim row held and the tests prove the change.
+- `CHANGES_REQUESTED`: a cited line or a failed command breaks a claim, or the tests don't prove it.
+- `REOPEN_REQUIRED`: the approach is wrong, not a line.
 
 ## Rationalizations
 
 | Excuse | Rebuttal |
 |---|---|
-| The checks passed, so the claim holds | The scripts already ran the checks. Read the changed branches. |
-| I'll name a file that might exist later | A finding cites a changed line or a command that failed. |
-| One more shape, then I'm done | A real miss is already a finding. A second imagined shape is not another pass. |
-| I set models.critic to another family | Nothing in this hop starts that model. The journal is the check. |
+| The checks passed, so the claim holds | The gate ran them. Your job is the input they didn't try. |
+| The tests exist, so it's tested | Would they fail on the old code? |
+| One more imagined shape, then I'm done | A real miss is already a finding. |
+| I'll approve and note concerns | A concern that breaks a claim is CHANGES_REQUESTED. |

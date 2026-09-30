@@ -1,12 +1,12 @@
-# GitHub Actions — CI is the wall; Cursor hooks are the fast path.
-# Ticket branches (`ticket/NN-slug`) run the full gate.sh pr.
-# Template / maintenance branches run environment gates only (no ticket NN).
+# GitHub Actions — CI re-derives every gate from the pushed branch.
+# Ticket branches (ticket/NN-slug) must be shipped (ticket in tickets/closed/)
+# and pass gate.sh pr. Other branches run the environment gates only; any
+# change to a MEDIUM/HIGH path there fails env-lint --protected-diff.
 
 name: agentic-gates
 
 on:
   pull_request:
-    branches: [dev, main, master]
 
 jobs:
   gates:
@@ -14,10 +14,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.sha }}  # the branch as pushed, not the merge commit
           fetch-depth: 0
 
       - name: Install jq
         run: sudo apt-get update && sudo apt-get install -y jq
+
+      - name: Base branch
+        run: |
+          base="$(awk '/^base_branch:/{print $2; exit}' .agentic/config.yml)"
+          if [ "${{ github.base_ref }}" != "$base" ]; then
+            echo "::warning::PR targets '${{ github.base_ref }}' but config base_branch is '$base'"
+          fi
 
       - name: env-lint
         run: scripts/env-lint.sh --protected-diff
@@ -62,11 +70,10 @@ jobs:
       - name: gate pr (ticket branches)
         run: |
           set -euo pipefail
-          REF="${GITHUB_HEAD_REF:-}"
-          NN="$(printf '%s' "$REF" | sed -n 's/^ticket\/0*\([0-9][0-9]*\).*/\1/p')"
+          prefix="$(awk '/^branch_prefix:/{print $2; exit}' .agentic/config.yml)"
+          NN="$(printf '%s' "$GITHUB_HEAD_REF" | sed -n "s#^${prefix:-ticket/}0*\([0-9][0-9]*\)-.*#\1#p")"
           if [ -z "$NN" ]; then
-            echo "CI: branch '$REF' is not ticket/NN-slug — environment gates only (template/maintenance)."
+            echo "CI: '$GITHUB_HEAD_REF' is not a ticket branch — environment gates only."
             exit 0
           fi
-          NN="$(printf '%02d' "$NN")"
-          scripts/gate.sh pr "$NN"
+          scripts/gate.sh pr "$NN" --require-shipped

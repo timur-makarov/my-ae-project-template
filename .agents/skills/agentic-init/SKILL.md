@@ -6,55 +6,53 @@ disable-model-invocation: true
 
 # Agentic Init: Bootstrap the Environment in a Project
 
-Turn the copied template into a working environment for *this* project. Idempotent: safe to re-run; never overwrites existing tickets, decisions, or journal history.
+Turn the copied template into a working environment for *this* project. Idempotent: never
+overwrites existing tickets, decisions, or journal history.
 
-## Procedure
-
-### 1. Verify structure
-
-Ensure this hierarchy exists (create missing pieces from `.agentic/templates/`, report — don't overwrite — existing ones):
+## 1. Verify structure
 
 ```
-.agentic/
-├── config.yml
-├── map.md
-├── context/CONTEXT.md
-├── context/adr/
-├── tickets/open/  tickets/closed/
-├── journal/  journal/reviews/  journal/lessons.md
-├── state/enforcement.sha256
-├── references/dod.md
-└── templates/  (ticket-lite, ticket-full, critic_report, adr, pr, handoff)
-scripts/verify.sh  scripts/ticket-lint.sh  scripts/review-package.sh
-scripts/gate.sh  scripts/stamp-check.sh  scripts/env-lint.sh
-scripts/memory-lint.sh  scripts/evidence-check.sh  scripts/artifact-lint.sh  scripts/debt-lint.sh
-scripts/model-check.sh  scripts/selftest.sh  scripts/lib.sh  scripts/floor-guard.sh  scripts/trek-log.sh
-.cursor/rules/constitution.mdc  .cursor/rules/default_swe.mdc
-.cursor/hooks.json  .cursor/hooks/guard.sh  .cursor/hooks/audit.sh
-.cursor/hooks/protect.sh  .cursor/hooks/session-start.sh
+AGENTS.md
+.agentic/  config.yml  map.md  context/{CONTEXT.md,adr/}  tickets/{open,closed}/
+           journal/lessons/  references/{dod,judgment}.md  templates/
+scripts/   gate.sh verify.sh stamp-check.sh lib.sh ticket-lint.sh env-lint.sh memory-lint.sh
+           debt-lint.sh floor-guard.sh model-check.sh review-package.sh selftest.sh
+scripts/hooks/  guard.sh protect.sh mcp-guard.sh session-start.sh stop.sh audit.sh adapt.sh
+.cursor/   hooks.json  agents/agentic-evaluator.md
+.claude/   settings.json  agents/agentic-evaluator.md  skills/* -> ../../.agents/skills/*
+.codex/    config.toml  hooks.json  rules/agentic.rules
 .github/workflows/agentic-gates.yml
 ```
 
-### 2. Git
+Requires `git`, `jq` and `python3`. The hooks deny everything without jq (fail closed).
 
-- If not a git repo: `git init`, initial commit, create the base branch named in `config.yml` (`base_branch`).
-- Ensure `.gitignore` contains the `worktree_dir` from config (default `.worktrees/`) plus `.agentic/state/active-ticket`, `close-authorized-*`, `critic-payload-*`, and `scope-*.txt`. The `.agentic/` tree itself is **committed** — it's the project's memory. `enforcement.sha256` is committed; ephemeral state files are not.
+## 2. Git
 
-### 3. Fill project specifics (ask the human for what you can't detect)
+- Not a repo: `git init`, initial commit, create `base_branch` from config.
+- `.gitignore` has `.worktrees/` and `.agentic/state/`. Everything else under `.agentic/` is committed.
+- Codex: trust the project, then review the hooks in `/hooks` (Codex re-asks after every hook change).
 
-- `config.yml` → `verify:` block: detect the stack (package.json / Cargo.toml / pyproject.toml / go.mod / Makefile...) and propose real commands for `test`, `lint`, `typecheck`, `e2e`. Confirm before writing. The template ships `scripts/selftest.sh` as `verify.test` to prove the environment; replace it with the host project's suite once that exists.
-- `config.yml` → `risk_paths`: keep the defaults; add project-specific floors (`migrations/**`, `**/auth/**`, payment paths).
-- `config.yml` → `models:`: leave `inherit` unless the human names slugs that also appear in `models_allowed`.
-- `config.yml` → leave `scope.strict: false`. Pointing `verify.test` at the host suite is what arms the no-scope deny. While `verify.test` contains `selftest.sh`, product files stay editable without a scope file.
-- `config.yml` → `craft_skills`: keep true unless the host wants the spine only.
-- `map.md` → **Destination**: one sentence, from the human. Don't invent it.
-- `context/CONTEXT.md`: seed glossary/invariants if the project already has code worth reading. Every load-bearing row needs `cite:path needle:"token"` (`scripts/memory-lint.sh`).
+## 3. Fill project specifics (ask the human for what you can't detect)
 
-### 4. Prove the gate works
+- `verify:` detect the stack (package.json / Cargo.toml / pyproject.toml / go.mod / Makefile) and
+  propose real `test`, `lint`, `typecheck`, `e2e` commands. Confirm before writing. The template's
+  `scripts/selftest.sh` proves the environment itself; replace it with the host suite.
+- `scope.strict: true` once the host suite is wired, so product edits need a claimed ticket.
+  `ticketless_paths` lists globs that stay editable without one (docs, say).
+- `risk_paths`: keep the defaults; add project floors (auth, payments, migrations paths).
+- `guard:`: defaults give the agent broad freedom (network and installs allowed; secrets denied).
+  Tighten only on the human's word. `guard.network` must match `.codex/config.toml`
+  `network_access` (env-lint checks).
+- `models:` stay `inherit` unless the human names slugs listed in `models_allowed`.
+- `map.md` Destination: one sentence, from the human. Don't invent it.
+- `CONTEXT.md`: seed the glossary and invariants if the project has code worth reading; every
+  load-bearing row needs `cite:path needle:"token"`.
 
-Run `scripts/verify.sh` then `scripts/env-lint.sh --write-manifest` after any enforcement-file change. A warning about an empty verify block means step 3 is unfinished — the environment is not initialized until the gate proves something.
+## 4. Prove it works
 
-### 5. Report
+`scripts/verify.sh` and `scripts/env-lint.sh` both exit 0, and `scripts/gate.sh next` prints a rest row.
 
-- Structure status, git status, verify output (pasted).
-- The workflow: `/agentic-route` if unsure → `/agentic-task` → (`/agentic-grill` if blocked) → `/agentic-implement` → `/agentic-pr` → `/agentic-archive`; `/agentic-status` anytime; `/agentic-handoff` when stopping mid-ticket; `/agentic-postmortem` when shipped work regresses.
+## 5. Report
+
+Structure status, verify output (pasted), and the workflow: `/agentic-task` →
+`scripts/gate.sh advance NN` until it ships → `/agentic-pr`.

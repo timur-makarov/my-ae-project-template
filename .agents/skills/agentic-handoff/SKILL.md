@@ -5,24 +5,26 @@ description: "Use when a session is ending or context is running out while a tic
 
 # Agentic Handoff: Mid-Ticket Resumption Brief
 
-Write the state down so the next session (you, another agent, another human) resumes instead of restarts. Memory does not survive session boundaries; files do.
+The mechanical state survives on its own: the branch, the ticket front matter, `.agentic/state/`,
+and `scripts/gate.sh next NN` recompute it. A handoff carries what doesn't survive, which is
+what you were thinking.
 
-## Write the brief
+## Write
 
-Fill `.agentic/templates/handoff.md` → `.agentic/journal/<NN>-handoff.md`:
+Fill `.agentic/templates/handoff.md` → `.agentic/journal/NN-handoff.md`:
 
-1. **Ticket, branch, worktree path, ledger path** — the pointers, exact.
-2. **State:** last completed piece with its commit range (from the ledger — verify against `git log`, don't trust recollection); what is half-done and in which files (`git status` pasted, not summarized).
-3. **Verified vs. decayed:** claims that hold with evidence pointers, vs. mutable-state facts that must be re-checked on resume (running processes, remote state, anything time-sensitive).
-4. **The open question** — one sentence naming exactly what the next action must answer. If you can't write that sentence, the honest entry is "state: confused about X" — a named confusion is solvable; a disguised one compounds.
-5. **Next command** — the literal command or dispatch to run first.
-6. **Traps** — what a resuming agent could plausibly do that damages the work (wrong branch, stale build, half-applied migration).
+1. Branch, worktree path, and the `NEXT` line from `scripts/gate.sh next NN`.
+2. **In flight:** what's half-done and in which files (`git status` pasted, not summarized).
+3. **Verified vs. decayed:** claims that hold, with evidence pointers, vs. mutable facts to re-check
+   (running processes, remote state).
+4. **The open question:** one sentence naming exactly what the next action must answer. If you
+   can't write it, say "state: confused about X". A named confusion is solvable; a disguised one compounds.
+5. **Traps:** what a resuming agent could plausibly do that damages the work.
 
-## Update the pointers
+Leave the ticket's status alone.
 
-- Append to the ledger: `HANDOFF: see journal/<NN>-handoff.md`.
-- Leave ticket Status as-is (it reflects work state, not session state).
+## Resume
 
-## On resume (the other half of this skill)
-
-Read the handoff + ledger **before** touching anything. Re-verify every "decayed" item. If the handoff mtime is older than the ledger mtime, ignore the handoff (`gate.sh implement` will flag it). Delete the handoff file once resumed (`git rm` if committed) — a stale handoff is worse than none; the ledger keeps the permanent record.
+Run `scripts/gate.sh next NN` first, then read the handoff and re-verify every decayed item.
+If `NEXT` disagrees with the handoff, trust `NEXT`. Delete the handoff once resumed; a stale
+handoff is worse than none.

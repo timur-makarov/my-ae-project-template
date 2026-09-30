@@ -5,11 +5,14 @@ description: "Use when a ticket's implementation is complete and verified, and t
 
 # Agentic PR: Finish the Branch
 
-Take a `ready-for-review` ticket branch to integration. Reads `base_branch` from `.agentic/config.yml`.
+Integrate a shipped ticket branch (`scripts/gate.sh next NN` says `/agentic-pr`). Reads
+`base_branch` from `.agentic/config.yml`.
 
 ## 1. Gate
 
-Run `scripts/gate.sh pr <NN> [pr-body-file]` **on the tree being integrated, now**. The gate checks the verify *stamp* (HEAD match, dirty=false, exit 0), critic APPROVED for MEDIUM/HIGH, diff-time risk floors, merge-base vs `base_branch`, no remaining ASSUMED rows, resolution lint, and debt-lint. Red gate → report failures with output and stop; the menu comes after green. For HIGH-risk tickets, `risk.high_requires_human_merge` means options that merge without a human are off the table (local guard asks; CI is the wall).
+`scripts/gate.sh pr NN --require-shipped` re-runs everything CI will run, read-only. Red → report
+the failure with output and stop. HIGH tickets (`risk.high_requires_human_merge`): push and open
+the PR, but a human merges; the guard denies an agent merge into base.
 
 ## 2. Detect environment
 
@@ -34,8 +37,8 @@ Integration is the human's decision; if they pre-authorized ("open a PR when don
 
 ## 4. Execute
 
-- **Merge locally:** from the main checkout — `git checkout <base_branch> && git pull && git merge <branch>`, then `scripts/verify.sh` **on the merged result**. Red → stop, leave branch and worktree in place (nothing pushed; recoverable). Green → clean up worktree (step 5), `git branch -d <branch>`.
-- **PR:** `git push -u origin <branch>`, create the PR against `base_branch` with the forge CLI (`gh pr create` or equivalent), body from `.agentic/templates/pr.md` filled from the ticket: Done Contract as checkboxes, verify stamp protocol lines, risk section, **every `Ruling:` line from the ledger** (or `Rulings: none`), critic verdict + report path. Re-run `scripts/gate.sh pr <NN> <bodyfile>` on the filled body. Record the PR URL in the ticket. Keep the worktree — feedback lands there.
+- **Merge locally:** from the main checkout — `git checkout <base_branch> && git pull && git merge --no-ff <branch>` (the guard allows it only for a shipped, non-HIGH ticket branch), then `scripts/verify.sh` **on the merged result**. Red → stop, leave branch and worktree in place (nothing pushed; recoverable). Green → clean up worktree (step 5), `git branch -d <branch>`.
+- **PR:** `git push -u origin <branch>`, then `gh pr create --base <base_branch>` (or the forge's equivalent) with the body from `.agentic/templates/pr.md`, filled from the ticket and the review report. CI runs `gate.sh pr NN --require-shipped` on the pushed branch. Keep the worktree — feedback lands there.
 - **Keep:** report branch and worktree path; done.
 
 ## 5. Worktree cleanup (merge path only)
@@ -44,8 +47,8 @@ Only remove worktrees under the config's `worktree_dir` — anything else is hos
 
 ## 6. Handling PR feedback
 
-Reply to inline review threads in-thread, not as top-level comments. Before implementing any reviewer suggestion, verify it against this codebase (does it break something, is there a reason for the current shape, is the "missing feature" even used — YAGNI check). Push back with technical reasoning when it's wrong; never performative agreement. Fix one item at a time, test each; unclear items get clarified before *any* are implemented — items may be related.
+Edit on the ticket branch and run `scripts/gate.sh advance NN`: product changes after ship reopen the ticket, re-run the checks (and the review, for MEDIUM/HIGH), and ship again. Then push. Reply to inline review threads in-thread, not as top-level comments. Before implementing any reviewer suggestion, verify it against this codebase (does it break something, is there a reason for the current shape, is the "missing feature" even used — YAGNI check). Push back with technical reasoning when it's wrong; never performative agreement. Fix one item at a time, test each; unclear items get clarified before *any* are implemented — items may be related.
 
 ## 7. Report
 
-Sentence 1: what was integrated and where (PR URL or merge result). Then: verify evidence, anything parked/deferred from the ledger, next action (`/agentic-archive <NN>` once accepted/merged).
+Sentence 1: what was integrated and where (PR URL or merge result). Then: the gate evidence, anything deliberately deferred, and who merges (human for HIGH).

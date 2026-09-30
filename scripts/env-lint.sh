@@ -1,92 +1,105 @@
 #!/usr/bin/env bash
-# env-lint.sh — enforcement-layer integrity + CONTEXT.md cap + memory-lint + optional protected-path diff.
+# env-lint.sh — the enforcement wiring is intact and the tools agree.
 #
 # Usage:
-#   scripts/env-lint.sh                 # compare hashes to .agentic/state/enforcement.sha256
-#   scripts/env-lint.sh --write-manifest # regenerate the manifest (HIGH-ticket work)
-#   scripts/env-lint.sh --protected-diff # fail if CI diff touches protected paths without HIGH
+#   scripts/env-lint.sh                  # wiring + CONTEXT.md cap + memory-lint
+#   scripts/env-lint.sh --protected-diff # also: every changed file's risk floor
+#                                        # is covered by the branch's ticket tier (CI)
+#
+# Wiring: tool configs parse; every hook command names a script that exists;
+# Cursor's shell/file hooks stay failClosed; Codex's sandbox network matches
+# guard.network; .claude/skills/* resolve to .agents/skills/*.
 set -u
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=lib.sh
 source "$SCRIPT_DIR/lib.sh"
 
-MANIFEST="$STATE/enforcement.sha256"
+fail=0
+err() { echo "env-lint: $1" >&2; fail=1; }
 
-enforcement_list() {
-  {
-    echo ".cursor/hooks.json"
-    echo ".cursor/hooks/guard.sh"
-    echo ".cursor/hooks/audit.sh"
-    echo ".cursor/hooks/protect.sh"
-    echo ".cursor/hooks/session-start.sh"
-    echo ".cursor/hooks/stop.sh"
-    echo ".cursor/hooks/mcp-guard.sh"
-    echo ".cursor/hooks/task-guard.sh"
-    echo ".cursor/rules/constitution.mdc"
-    echo ".cursor/rules/default_swe.mdc"
-    echo ".github/workflows/agentic-gates.yml"
-    echo ".agentic/references/dod.md"
-    find "$ROOT/scripts" -name '*.sh' -not -name 'selftest.sh' | sed "s|^$ROOT/||" | sort
-    find "$ROOT/.agentic/templates" -type f | sed "s|^$ROOT/||" | sort
-  } | sort -u
-}
+CURSOR_HOOKS="$ROOT/.cursor/hooks.json"
+CLAUDE_SETTINGS="$ROOT/.claude/settings.json"
+CODEX_HOOKS="$ROOT/.codex/hooks.json"
+CODEX_CONFIG="$ROOT/.codex/config.toml"
 
-file_hash() {
-  local f="$1"
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$f" | awk '{print $1}'
-  else
-    shasum -a 256 "$f" | awk '{print $1}'
+parse_configs() {
+  local f
+  for f in "$CURSOR_HOOKS" "$CLAUDE_SETTINGS" "$CODEX_HOOKS"; do
+    [ -f "$f" ] || continue
+    python3 - "$f" <<'PY' || err "$(relpath_from "$f") is not valid JSON"
+import json, re, sys
+text = open(sys.argv[1]).read()
+text = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("//"))
+try:
+    json.loads(text)
+except ValueError as e:
+    sys.exit(str(e))
+PY
+  done
+  if [ -f "$CODEX_CONFIG" ]; then
+    python3 - "$CODEX_CONFIG" <<'PY' || err ".codex/config.toml is not valid TOML"
+import sys
+try:
+    import tomllib
+except ImportError:
+    sys.exit(0)
+tomllib.load(open(sys.argv[1], "rb"))
+PY
   fi
 }
 
-write_manifest() {
-  mkdir -p "$STATE"
-  : > "$MANIFEST"
-  local rel
-  while IFS= read -r rel; do
-    [ -z "$rel" ] && continue
-    if [ ! -f "$ROOT/$rel" ]; then
-      echo "env-lint: missing enforcement file $rel" >&2
-      continue
-    fi
-    printf '%s  %s\n' "$(file_hash "$ROOT/$rel")" "$rel" >> "$MANIFEST"
-  done < <(enforcement_list)
-  echo "env-lint: wrote $MANIFEST"
+hook_scripts_exist() {
+  local f s
+  for f in "$CURSOR_HOOKS" "$CLAUDE_SETTINGS" "$CODEX_HOOKS"; do
+    [ -f "$f" ] || continue
+    while IFS= read -r s; do
+      [ -z "$s" ] && continue
+      [ -x "$ROOT/$s" ] || err "$(relpath_from "$f") runs $s, which is missing or not executable"
+    done < <(grep -v '^[[:space:]]*//' "$f" | grep -oE 'scripts/hooks/[A-Za-z0-9_.-]+\.sh' | sort -u)
+  done
 }
 
-compare_manifest() {
-  if [ ! -f "$MANIFEST" ]; then
-    echo "env-lint: missing $MANIFEST — run scripts/env-lint.sh --write-manifest" >&2
-    protocol ENV_LINT MISSING_MANIFEST
-    return 1
-  fi
-  local fail=0 rel expected actual
-  while IFS= read -r rel; do
-    [ -z "$rel" ] && continue
-    if ! grep -q "  $rel\$" "$MANIFEST"; then
-      echo "env-lint: $rel is in the enforcement set but not in the manifest" >&2
-      fail=1
-      continue
-    fi
-  done < <(enforcement_list)
+failclosed_intact() {
+  [ -f "$CURSOR_HOOKS" ] || return 0
+  python3 - "$CURSOR_HOOKS" <<'PY' || err ".cursor/hooks.json: guard.sh and protect.sh must be wired, each with \"failClosed\": true"
+import json, sys
+text = "\n".join(l for l in open(sys.argv[1]).read().splitlines() if not l.lstrip().startswith("//"))
+try:
+    hooks = json.loads(text).get("hooks", {})
+except ValueError:
+    sys.exit(0)  # parse_configs reports it
+entries = [e for es in hooks.values() for e in es]
+cmds = [e.get("command", "") for e in entries]
+bad = [
+    e for e in entries
+    if any(k in e.get("command", "") for k in ("guard.sh", "protect.sh")) and e.get("failClosed") is not True
+]
+missing = not any("/guard.sh" in c and "mcp-guard" not in c for c in cmds) or not any("protect.sh" in c for c in cmds)
+sys.exit(1 if bad or missing else 0)
+PY
+}
 
-  while IFS= read -r line; do
-    expected="${line%%  *}"
-    rel="${line#*  }"
-    if [ ! -f "$ROOT/$rel" ]; then
-      echo "env-lint: manifest lists missing file $rel" >&2
-      fail=1
-      continue
-    fi
-    actual="$(file_hash "$ROOT/$rel")"
-    if [ "$actual" != "$expected" ]; then
-      echo "env-lint: DRIFT $rel" >&2
-      fail=1
-    fi
-  done < "$MANIFEST"
+network_agrees() {
+  [ -f "$CODEX_CONFIG" ] || return 0
+  local net want have
+  net="$(config_get guard.network)"
+  case "$net" in allow) want=true ;; *) want=false ;; esac
+  have="$(awk '/^\[sandbox_workspace_write\]/{inb=1; next} /^\[/{inb=0} inb && /^network_access/{sub(/.*=[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); print; exit}' "$CODEX_CONFIG")"
+  [ -z "$have" ] && have=false
+  [ "$have" = "$want" ] || err ".codex/config.toml network_access = $have, but guard.network is '$net' (want $want)"
+}
 
-  return "$fail"
+skill_links() {
+  local d name
+  [ -d "$ROOT/.claude/skills" ] || return 0
+  for d in "$ROOT"/.agents/skills/*/; do
+    name="$(basename "$d")"
+    [ -f "$ROOT/.claude/skills/$name/SKILL.md" ] || err ".claude/skills/$name does not resolve to .agents/skills/$name (ln -s ../../.agents/skills/$name .claude/skills/$name)"
+  done
+  for d in "$ROOT"/.claude/skills/*; do
+    [ -e "$d" ] || [ -L "$d" ] || continue
+    [ -f "$d/SKILL.md" ] || err ".claude/skills/$(basename "$d") is a broken link"
+  done
 }
 
 context_cap() {
@@ -96,86 +109,48 @@ context_cap() {
   file="$ROOT/.agentic/context/CONTEXT.md"
   [ -f "$file" ] || return 0
   lines="$(wc -l < "$file" | tr -d ' ')"
-  if [ "$lines" -gt "$cap" ]; then
-    echo "env-lint: CONTEXT.md is $lines lines (cap $cap) — compact it" >&2
-    return 1
-  fi
-  return 0
-}
-
-memory_lint() {
-  "$SCRIPT_DIR/memory-lint.sh"
+  [ "$lines" -le "$cap" ] || err "CONTEXT.md is $lines lines (cap $cap) — compact it"
 }
 
 protected_diff() {
-  has_git || { echo "env-lint: --protected-diff requires git" >&2; return 1; }
-  local base
-  base="$(base_branch)"
-  [ -z "$base" ] && base="dev"
-  if ! git -C "$ROOT" rev-parse --verify "$base" >/dev/null 2>&1; then
-    echo "env-lint: base branch '$base' not found; skipping protected-diff" >&2
-    return 0
+  has_git || { err "--protected-diff requires git"; return; }
+  local ref mb nn ticket tier f floor
+  if ! ref="$(base_ref)"; then
+    [ -n "${CI:-}" ] && { err "base '$(base_branch)' not found — fetch it"; return; }
+    echo "env-lint: WARNING: base '$(base_branch)' not found; skipping protected-diff" >&2
+    return
   fi
-  local nn="" ticket="" tier=""
-  nn="$(git -C "$ROOT" branch --show-current | sed -n 's/^ticket\/0*\([0-9][0-9]*\).*/\1/p')"
+  mb="$(git -C "$ROOT" merge-base "$ref" HEAD 2>/dev/null)" || { err "no merge-base with $ref"; return; }
+  nn="$(branch_nn)"
+  tier=""
   if [ -n "$nn" ]; then
-    ticket="$(ticket_file "$(nn_pad "$nn")" 2>/dev/null || true)"
+    ticket="$(ticket_file "$nn" 2>/dev/null || true)"
     [ -n "$ticket" ] && tier="$(ticket_yaml "$ticket" risk_tier)"
   fi
-  local fail=0 f floor
   while IFS= read -r f; do
     [ -z "$f" ] && continue
     floor="$(path_risk_floor "$f")"
-    case "$f" in
-      .cursor/hooks/*|scripts/*|.agentic/templates/*|.cursor/hooks.json|.cursor/rules/*)
-        if [ "$tier" != "HIGH" ]; then
-          echo "env-lint: protected path '$f' in diff requires HIGH ticket (found '${tier:-none}')" >&2
-          fail=1
-        fi
-        ;;
-    esac
-    if [ "$(tier_rank "$floor")" -gt "$(tier_rank "${tier:-LOW}")" ]; then
-      echo "env-lint: '$f' floor $floor exceeds ticket tier ${tier:-unset}" >&2
-      fail=1
+    [ "$floor" = "LOW" ] && continue
+    if [ "$(tier_rank "$floor")" -gt "$(tier_rank "${tier:-NONE}")" ]; then
+      err "'$f' (floor $floor) changed on $(current_branch) with ticket tier '${tier:-none}'"
     fi
-  done < <(git -C "$ROOT" diff --name-only "$base"...HEAD)
-  return "$fail"
-}
-
-
-failclosed_intact() {
-  local hf="$ROOT/.cursor/hooks.json"
-  [ -f "$hf" ] || return 0
-  if grep -q '"failClosed"[[:space:]]*:[[:space:]]*false' "$hf"; then
-    echo "env-lint: failClosed was set to false in hooks.json — HIGH-only and a floor violation" >&2
-    return 1
-  fi
-  if ! grep -q '"failClosed"[[:space:]]*:[[:space:]]*true' "$hf"; then
-    echo "env-lint: hooks.json missing failClosed true" >&2
-    return 1
-  fi
-  return 0
+  done < <(git -C "$ROOT" diff --name-only "$mb" HEAD -- . "${NON_PRODUCT[@]}")
 }
 
 MODE="${1:-}"
-fail=0
 case "$MODE" in
-  --write-manifest) write_manifest; exit 0 ;;
-  --protected-diff)
-    compare_manifest || fail=1
-    context_cap || fail=1
-    memory_lint || fail=1
-    failclosed_intact || fail=1
-    protected_diff || fail=1
-    ;;
-  "")
-    compare_manifest || fail=1
-    context_cap || fail=1
-    memory_lint || fail=1
-    failclosed_intact || fail=1
-    ;;
-  *) echo "usage: scripts/env-lint.sh [--write-manifest|--protected-diff]" >&2; exit 2 ;;
+  ""|--protected-diff) ;;
+  *) echo "usage: scripts/env-lint.sh [--protected-diff]" >&2; exit 2 ;;
 esac
+
+parse_configs
+hook_scripts_exist
+failclosed_intact
+network_agrees
+skill_links
+context_cap
+"$SCRIPT_DIR/memory-lint.sh" >/dev/null || err "memory-lint failed: scripts/memory-lint.sh"
+[ "$MODE" = "--protected-diff" ] && protected_diff
 
 if [ "$fail" -eq 0 ]; then
   echo "env-lint: OK"
