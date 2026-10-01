@@ -38,9 +38,11 @@ A ticket's lane follows its risk tier:
 - **LOW:** claim, edit inside scope, then `advance` commits, runs the Done Contract `Check:`
   commands, and ships. No verify stamp, no reviewer.
 - **MEDIUM:** claim, edit, commit `NN: …`. Then `advance` runs verify and the checks and builds a
-  reviewer payload. The reviewer writes `.agentic/journal/NN-critic.md`, and the gate re-runs every
-  command in its Claims table. You write lessons (`journal/lessons/NN.md`), and `advance` ships.
-- **HIGH:** same as MEDIUM. A diff on a HIGH path also needs a security report. A human merges it.
+  critic payload. The critic writes `.agentic/journal/NN-critic.md`, a findings list on the changed
+  lines. You fix a finding an ordinary caller hits, or decline it in `NN-critic-response.md`.
+  Then lessons (`journal/lessons/NN.md`), and `advance` ships.
+- **HIGH:** same as MEDIUM. After the critic findings are judged, a diff on a HIGH path gets a
+  security review the same way. A human merges it.
 
 Other steps:
 
@@ -52,12 +54,13 @@ Other steps:
   re-ships by itself.
 - **Status:** `gate.sh next --all` lists in-flight, open and recently closed tickets.
 
-**Reviewer.**
-- Mode A (default, `critic.command: ""`): the agent spawns the `agentic-evaluator` subagent with the
+**Reviewer.** The critic runs first and returns findings. Security runs only after those findings
+are judged, and only on a HIGH diff that touches a HIGH path.
+- Mode A (default, `critic.command: ""`): the agent spawns one `agentic-evaluator` subagent with the
   brief the gate names.
 - Mode B: set `critic.command` (examples in `config.yml`). The gate runs it headless in a throwaway
   worktree and takes its stdout as the report. If a report is edited after the reviewer wrote it,
-  ship is blocked.
+  ship is blocked. A finding that does not cite a changed line is ignored.
 
 **Parallel work.** Use `gate.sh implement NN --worktree` to put a ticket in
 `.worktrees/NN-slug/`, and open that folder as the agent's workspace.
@@ -84,22 +87,25 @@ Hooks answer deny, ask or allow. Everything not listed here is allowed.
 | Merging an unshipped or HIGH ticket branch into base | |
 | File writes outside the repo, into `.agentic/state/`, `tickets/closed/`, or `.git/` | |
 | With a claim: writes outside its frozen scope or above its risk tier | |
+| Product writes while a ticket is `blocked-on-answers`, or its Open questions section is not `none` | |
 
 `guard:` in `config.yml` loosens or tightens network, package installs, secrets and privileged
 commands (network and installs default to allow). `scope.strict: true` requires a claim for any
 product write (except `ticketless_paths`).
 
 **The gate refuses to ship** when any of these hold:
-- Ticket problems: a lint failure (no runnable `Check:`, a vacuous or whole-suite check, an EXPANDING
-  blast radius not settled with a human, a lone `**` scope), or an ASSUMED load-bearing row.
+- Ticket problems: a lint failure (no runnable `Check:`, a vacuous or whole-suite check, a template
+  leftover, an open question on an open ticket, an EXPANDING blast radius not settled with a human,
+  a lone `**` scope). Claim refuses `blocked-on-answers` and an ASSUMED load-bearing row; ship refuses
+  an ASSUMED row too.
 - Scope and tier: files outside `scope_paths`, or a file whose `risk_paths` floor is above the
   ticket's tier.
 - Deps and migrations: a destructive migration without a down path, or new lockfile packages not
   listed in `new_deps:`.
 - Code floors: `@ts-ignore`, `eslint-disable`, `.skip`, deleted asserts or lowered thresholds
   (`floor-guard.sh`), or an orphan `PONYTAIL:` marker.
-- MEDIUM/HIGH only: a stale or red verify stamp, a test-count drop, a report that isn't APPROVED
-  or is for an older commit, a failing claim command, or missing lessons.
+- MEDIUM/HIGH only: a stale or red verify stamp, a test-count drop, a critic or security
+  report that was edited after the reviewer wrote it or whose findings are not judged, or missing lessons.
 
 **CI** (`.github/workflows/agentic-gates.yml`) runs on every PR. It runs the linters, floor-guard
 and verify. On `ticket/NN-*` branches it also runs `gate.sh pr NN --require-shipped`: the same

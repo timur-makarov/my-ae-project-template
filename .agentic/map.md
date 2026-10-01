@@ -5,7 +5,7 @@
 
 ## Standing Notes
 
-- **Workflow:** `AGENTS.md` § The railroad. Skills: `/agentic-task`, `/agentic-implement`,
+- **Workflow:** `AGENTS.md` § The railroad. A new ticket stays `blocked-on-answers` until a human sets `status: open`. Skills: `/agentic-task`, `/agentic-implement`,
   `/agentic-critic`, `/agentic-pr`, `/agentic-archive`, `/agentic-status`, `/agentic-grill`,
   `/agentic-handoff`, `/agentic-postmortem`; intake `/agentic-idea`, `/agentic-interview`;
   craft (when `craft_skills: true`) `/agentic-debug`, `/agentic-api`, `/agentic-security`,

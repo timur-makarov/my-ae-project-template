@@ -8,50 +8,55 @@ description: "Use when a MEDIUM or HIGH ticket's diff needs an adversarial revie
 The author doesn't review its own work. `scripts/gate.sh advance NN` builds a payload in
 `.agentic/state/payload-NN/` and names a brief. A separate agent seat reads it and writes the report.
 
+Security is a later seat. Do not start it in the same turn as the critic. It runs only after the
+author has judged the critic's findings.
+
 ## Spawning (the author)
 
 `critic.command` is one project setting, chosen once. A ticket does not switch it.
 
 - **Empty command** (Mode A): start a seat that did not write this change. Give it the brief path,
-  `.agentic/state/payload-NN/BRIEF.md`, and tell it to review per that brief. If `BRIEF-security.md`
-  exists, start a second seat on that brief in the same turn.
-- **Command set** (Mode B): `advance` runs `critic.command`. Nothing to spawn. The command reads
-  `AGENTIC_BRIEF` and prints the report.
+  `.agentic/state/payload-NN/BRIEF.md`, and tell it to review per that brief. One seat. The security
+  brief does not exist yet.
+- **Command set** (Mode B): `advance` runs `critic.command` for the critic report, then stops if
+  there are findings to judge. Security uses the same command later, on its own brief.
 
-Then `advance`: it re-runs every command in the report's Claims table. A report changed after a
-Mode B reviewer wrote it is refused.
+The report is a findings list. You judge it. A finding is fixed when an ordinary caller of the
+template, or of a project built with it, hits the changed logic. Otherwise decline it. Unsure
+means fix. Write one line per in-bound finding in `.agentic/journal/NN-critic-response.md`:
+
+```
+F1: fixed
+F2: declined
+```
+
+Do not edit the reviewer's report. A finding that does not cite a changed line is already
+ignored; leave it out of the response. Then `advance`. Security starts only after this file
+covers every in-bound critic finding.
 
 ## Reviewing (the evaluator)
 
 The brief names the evidence (`contract.md`, `diff.md`, `checks.json`, `verify-stamp.json`) and
-the report path. You may read any file and run read-only commands; edit nothing but the report.
-The gate has already run the Done Contract checks and scope rules, so don't restate them.
+the report path. Edit nothing but the report.
 
-1. **Each claim, attacked.** For each Done Contract assertion, pick the input most likely to break
-   it, run it, and record the command in the Claims table. A claim that says "all" or "never" gets
-   a second row. `type: diagnosis` and any number need the rival, or the words `not measured`.
-2. **The tests.** Would they fail without this change? Read them against the diff. A test that
-   passes on the old code proves nothing; say so as a finding.
-3. **The diff.** A finding is a changed line that doesn't do what the claim says, or a command
-   that failed. Cite `file:line` or the command. There's no cap on real misses; imagined future
-   files are not findings. Sibling callers of a changed function get one sentence or one claim row.
-   If the change moves untrusted input into a sink, apply the finding bar in
-   `.agents/skills/agentic-security/SKILL.md` in this same report. One reviewer. A second seat
-   still runs only when `BRIEF-security.md` is in the brief set.
-4. **Standing bar:** `.agentic/references/dod.md` for the ticket's tier.
+Review the changed lines and the logic those lines implement. Reading the containing block is
+allowed. Anything else is forbidden:
+
+- unchanged files and unchanged lines
+- imagined inputs, encodings, and cousin cases
+- a verdict
+- claim commands
+
+A finding cites one changed line as `` `path:line` `` and names the ordinary caller who hits it.
+If the changed lines hold, the findings list is the single word `none`.
 
 Write the report from `.agentic/templates/critic_report.md`, with the `**Head:**` line exactly as
-the brief gives it and one `**Verdict:**`:
-
-- `APPROVED`: every claim row held and the tests prove the change.
-- `CHANGES_REQUESTED`: a cited line or a failed command breaks a claim, or the tests don't prove it.
-- `REOPEN_REQUIRED`: the approach is wrong, not a line.
+the brief gives it.
 
 ## Rationalizations
 
 | Excuse | Rebuttal |
 |---|---|
-| The checks passed, so the claim holds | The gate ran them. Your job is the input they didn't try. |
-| The tests exist, so it's tested | Would they fail on the old code? |
-| One more imagined shape, then I'm done | A real miss is already a finding. |
-| I'll approve and note concerns | A concern that breaks a claim is CHANGES_REQUESTED. |
+| The checks passed, so there is nothing to say | Read the changed lines. A miss there is a finding. |
+| One more imagined shape, then I'm done | Imagined shapes are forbidden. |
+| I'll write a verdict so the gate stops them | You return a list. The author judges it. |

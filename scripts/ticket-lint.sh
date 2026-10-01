@@ -56,6 +56,34 @@ cycle_from() {
   return 1
 }
 
+# A blank field, TBD, or a single <placeholder> is an unfilled template slot.
+is_leftover() {
+  local v low inner
+  v="$(printf '%s' "$1" | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^["'\'']//; s/["'\'']$//; s/^[[:space:]]*//; s/[[:space:]]*$//')"
+  [ -z "$v" ] && return 0
+  low="$(printf '%s' "$v" | tr '[:upper:]' '[:lower:]' | sed -E 's/[[:punct:]]+$//')"
+  case "$low" in
+    tbd|todo) return 0 ;;
+  esac
+  case "$v" in
+    '<'*'>')
+      inner="${v#<}"
+      inner="${inner%>}"
+      [ "$v" = "<${inner}>" ] || return 1
+      case "$inner" in
+        *'<'*|*'>'*) return 1 ;;
+      esac
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+# Every line matching a labeled field. Empty if the label is absent.
+field_lines() {
+  grep -E "^- \\*\\*${2}:\\*\\*|^\\*\\*${2}:\\*\\*" "$1" 2>/dev/null || true
+}
+
 for f in "${FILES[@]}"; do
   [ -f "$f" ] || { err "$f" "file not found"; continue; }
 
@@ -66,7 +94,7 @@ for f in "${FILES[@]}"; do
 
   status="$(ticket_yaml "$f" status)"
   case "$status" in
-    open|in-progress|blocked-on-alignment|closed) ;;
+    open|in-progress|blocked-on-alignment|blocked-on-answers|closed) ;;
     "") err "$f" "missing status in front matter" ;;
     *)  err "$f" "invalid Status: '$status'" ;;
   esac
@@ -240,6 +268,101 @@ for f in "${FILES[@]}"; do
     [ -z "$maxg" ] && maxg=5
     if [ "$nscopes" -gt "$maxg" ]; then
       grep -q '^## Capability Map' "$f" || err "$f" "more than $maxg scope_paths requires ## Capability Map"
+    fi
+
+    # Shape only: a filled slot, not a judgment of whether the prose is enough.
+    while IFS= read -r fline; do
+      [ -z "$fline" ] && continue
+      fval="$(printf '%s' "$fline" | sed -E 's/.*\*\*[^*]+:\*\*[[:space:]]*//')"
+      if is_leftover "$fval"; then
+        err "$f" "template leftover in Verbatim"
+      fi
+    done < <(field_lines "$f" "Verbatim")
+    for label in Restatement Cause "Out of scope"; do
+      found=0
+      while IFS= read -r fline; do
+        [ -z "$fline" ] && continue
+        found=1
+        fval="$(printf '%s' "$fline" | sed -E 's/.*\*\*[^*]+:\*\*[[:space:]]*//')"
+        if is_leftover "$fval"; then
+          err "$f" "template leftover in ${label}"
+        fi
+      done < <(field_lines "$f" "$label")
+      [ "$found" -eq 1 ] || err "$f" "missing ${label}"
+    done
+    if [ "$template" = "full" ]; then
+      for label in Outcome User "Why now" Success Constraint; do
+        fline="$(field_lines "$f" "$label" | head -1)"
+        if [ -z "$fline" ]; then
+          err "$f" "missing Restate Contract ${label}"
+          continue
+        fi
+        fval="$(printf '%s' "$fline" | sed -E 's/.*\*\*[^*]+:\*\*[[:space:]]*//')"
+        if is_leftover "$fval"; then
+          err "$f" "template leftover in Restate Contract ${label}"
+        fi
+      done
+    fi
+    if ! grep -q '^## Constraints' "$f"; then
+      err "$f" "missing ## Constraints"
+    else
+      cfound=0
+      while IFS= read -r cline; do
+        case "$cline" in
+          ''|'<!--'*) continue ;;
+        esac
+        case "$cline" in
+          '- '*)
+            cfound=1
+            crest="$(printf '%s' "$cline" | sed -E 's/^[[:space:]]*-[[:space:]]*//; s/^\*\*[^*]+:\*\*[[:space:]]*//')"
+            if is_leftover "$crest"; then
+              err "$f" "template leftover in Constraints"
+            fi
+            ;;
+        esac
+      done < <(awk '/^## Constraints/{inb=1;next} /^## /{inb=0} inb {print}' "$f")
+      [ "$cfound" -eq 1 ] || err "$f" "Constraints has no concrete bullet"
+    fi
+    if ! grep -q '^## Open questions' "$f"; then
+      err "$f" "missing ## Open questions (write none, or a question)"
+    else
+      qbody="$(awk '
+        function after_closer(line,    rest) {
+          rest = line
+          sub(/^.*-->/, "", rest)
+          gsub(/^[[:space:]]+|[[:space:]]+$/, "", rest)
+          if (rest != "") print rest
+        }
+        /^## Open questions/ { inb=1; next }
+        inb && /^## / { inb=0 }
+        inb && /^[[:space:]]*<!--/ {
+          if ($0 ~ /-->/) after_closer($0)
+          else incom=1
+          next
+        }
+        inb && incom { if ($0 ~ /-->/) { incom=0; after_closer($0) }; next }
+        inb && /^[[:space:]]*$/ { next }
+        inb { print }
+      ' "$f")"
+      if [ -z "$qbody" ]; then
+        err "$f" "Open questions is empty — write none or a question"
+      elif [ "$qbody" = "none" ]; then
+        :
+      else
+        qmixed=0
+        while IFS= read -r qline; do
+          [ "$qline" = "none" ] && qmixed=1
+          qrest="$(printf '%s' "$qline" | sed -E 's/^[[:space:]]*-[[:space:]]*//')"
+          if is_leftover "$qrest"; then
+            err "$f" "template leftover in Open questions"
+          fi
+        done <<< "$qbody"
+        [ "$qmixed" -eq 0 ] || err "$f" "Open questions lists none and a question — use one"
+        case "$status" in
+          blocked-on-answers|blocked-on-alignment) ;;
+          *) err "$f" "open questions require status blocked-on-answers (found '$status')" ;;
+        esac
+      fi
     fi
   fi
 

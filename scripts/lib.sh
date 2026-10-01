@@ -471,37 +471,81 @@ sys.exit(worst)
 PY
 }
 
-# Last **Verdict:** line's enum value.
-report_verdict() {
-  awk '
-    /^\*\*Verdict:\*\*/ || /^- \*\*Verdict:\*\*/ { last=$0 }
-    END { print last }
-  ' "$1" | grep -oE 'APPROVED|CHANGES_REQUESTED|REOPEN_REQUIRED' | head -1
-}
-
 # **Head:** <sha> — the commit the reviewer evaluated.
 report_head() {
   grep -m1 -E '^(- )?\*\*Head:\*\*' "$1" 2>/dev/null | grep -oE '[0-9a-f]{7,40}' | head -1
 }
 
-# Commands from the report's ## Claims table (second column).
-claim_commands() {
-  awk '
-    BEGIN { FS="|" }
-    /^## Claims/ { in_table=1; next }
-    in_table && /^## / { in_table=0 }
-    in_table && /^\|/ {
-      gsub(/\\\|/, "\001")
-      if ($0 ~ /[Cc]laim/ && $0 ~ /[Cc]ommand/) next
-      if ($0 ~ /^[|][-: |]+$/) next
-      cmd=$3
-      gsub(/^[[:space:]]+|[[:space:]]+$/, "", cmd)
-      gsub(/`/, "", cmd)
-      gsub(/\001/, "|", cmd)
-      if (cmd == "" || cmd == "command" || cmd ~ /^</) next
-      print cmd
-    }
-  ' "$1"
+# Findings that cite a line changed between the merge-base and the report Head.
+# Prints "id<TAB>file:line<TAB>message". Anything else is ignored.
+bound_findings() {
+  local report="$1" sha base=""
+  [ -f "$report" ] || return 0
+  sha="$(report_head "$report")"
+  [ -n "$sha" ] || return 0
+  base="$(base_ref 2>/dev/null || true)"
+  python3 - "$ROOT" "$report" "$sha" "$base" <<'PY'
+import re, subprocess, sys
+root, report, sha, base = sys.argv[1:5]
+pat = re.compile(r"^- (F\d+): `([^`]+):(\d+)`(?:\s+(.*))?$")
+rows = []
+inb = False
+for line in open(report, encoding="utf-8", errors="replace"):
+    line = line.rstrip("\n")
+    if line.startswith("## Findings"):
+        inb = True
+        continue
+    if inb and line.startswith("## "):
+        break
+    if not inb:
+        continue
+    m = pat.match(line.strip())
+    if m:
+        path = m.group(2)[2:] if m.group(2).startswith("./") else m.group(2)
+        rows.append((m.group(1), path, int(m.group(3)), (m.group(4) or "").strip()))
+if not rows:
+    sys.exit(0)
+
+def merge_base():
+    if base:
+        p = subprocess.run(["git", "-C", root, "merge-base", base, sha], capture_output=True, text=True)
+        if p.returncode == 0 and p.stdout.strip():
+            return p.stdout.strip()
+    p = subprocess.run(["git", "-C", root, "rev-list", "--max-parents=0", sha], capture_output=True, text=True)
+    roots = [x for x in p.stdout.splitlines() if x]
+    return roots[-1] if roots else sha
+
+mb = merge_base()
+cache = {}
+
+def changed(path):
+    if path in cache:
+        return cache[path]
+    p = subprocess.run(["git", "-C", root, "diff", "-U0", mb, sha, "--", path], capture_output=True, text=True)
+    if p.returncode > 1:
+        sys.exit(1)
+    lines, new = set(), None
+    for raw in p.stdout.splitlines():
+        if raw.startswith("@@"):
+            m = re.search(r"\+(\d+)", raw)
+            new = int(m.group(1)) if m else None
+            continue
+        if new is None or raw.startswith("\\") or raw.startswith("+++") or raw.startswith("---"):
+            continue
+        if raw.startswith("+"):
+            lines.add(new)
+            new += 1
+        elif raw.startswith("-"):
+            continue
+        else:
+            new += 1
+    cache[path] = lines
+    return lines
+
+for fid, path, lineno, msg in rows:
+    if lineno in changed(path):
+        print(f"{fid}\t{path}:{lineno}\t{msg}")
+PY
 }
 
 # Added package names from lockfile diffs vs base...HEAD (stdout, one per line).

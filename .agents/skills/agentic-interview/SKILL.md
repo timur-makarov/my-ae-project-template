@@ -16,9 +16,9 @@ Extract what the user actually wants. Not a confidence-score ritual.
 ## Process
 
 1. One-sentence hypothesis. If you cannot write a Done Contract, say what is missing.
-2. **One question per turn**, followed by `GUESS: <what you think they'll say and why>`.
+2. **One question per turn**, followed by `GUESS: <what you think they'll say and why>`. Questions that are already independent of each other may share one round. A question the previous answer would dissolve waits.
 3. Stop when you can predict the next three answers — then emit the Restate Contract and wait for an explicit yes.
-4. Hand off to `/agentic-task` with that contract copied verbatim.
+4. Hand off to `/agentic-task` with that contract copied verbatim. Anything still unanswered goes under `## Open questions`, and the ticket stays `blocked-on-answers` until the user sets `status: open`.
 
 ### Restate Contract (six lines)
 

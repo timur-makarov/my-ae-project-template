@@ -3,7 +3,9 @@
 # Claude/Codex via adapt.sh).
 #   Reads:  secret files (guard.secrets).
 #   Writes: outside the repo and its worktrees; secrets; .agentic/state/**;
-#           .agentic/tickets/closed/**. With a claimed ticket (branch ticket/NN-*
+#           .agentic/tickets/closed/**. While an open ticket is blocked-on-answers,
+#           or its ## Open questions is not none: product files (the ticket and
+#           the journal stay writable). With a claimed ticket (branch ticket/NN-*
 #           and a frozen scope): outside the scope, or above the ticket's tier.
 #           With no claim and scope.strict: true: product files.
 # Standalone: does not source scripts/lib.sh. Fails closed.
@@ -113,6 +115,53 @@ case "$rel" in
   .agentic/tickets/closed/*) deny "Blocked: closed tickets are history. To change shipped work, open a new ticket." ;;
   .git/*) deny "Blocked: edit .git/ through git commands, not file tools." ;;
 esac
+
+# Exit 0 when some open ticket is waiting on the user.
+answers_pending() {
+  local f st body
+  [ -d "$ROOT/.agentic/tickets/open" ] || return 1
+  for f in "$ROOT"/.agentic/tickets/open/*.md; do
+    [ -f "$f" ] || continue
+    st="$(awk '
+      /^---[[:space:]]*$/ { n++; next }
+      n == 1 && /^status:/ {
+        sub(/^status:[[:space:]]*/, "")
+        sub(/[[:space:]]*#.*/, "")
+        gsub(/^[\042\047]|[\042\047]$/, "")
+        gsub(/[[:space:]]+$/, "")
+        print
+        exit
+      }
+    ' "$f")"
+    [ "$st" = "blocked-on-answers" ] && return 0
+    body="$(awk '
+      function after_closer(line,    rest) {
+        rest = line
+        sub(/^.*-->/, "", rest)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", rest)
+        if (rest != "") print rest
+      }
+      /^## Open questions/ { inb=1; next }
+      inb && /^## / { inb=0 }
+      inb && /^[[:space:]]*<!--/ {
+        if ($0 ~ /-->/) after_closer($0)
+        else incom=1
+        next
+      }
+      inb && incom { if ($0 ~ /-->/) { incom=0; after_closer($0) }; next }
+      inb && /^[[:space:]]*$/ { next }
+      inb { print }
+    ' "$f")"
+    [ -n "$body" ] && [ "$body" != "none" ] && return 0
+  done
+  return 1
+}
+if answers_pending; then
+  case "$rel" in
+    .agentic/journal/*|.agentic/tickets/open/*) ;;
+    *) deny "Blocked: a ticket is waiting on the user (status blocked-on-answers, or ## Open questions is not none). Product writes stay closed until Open questions is none and a human sets status: open." ;;
+  esac
+fi
 
 PREFIX="$(awk '/^branch_prefix:/{sub(/^[^:]+:[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); gsub(/"/, ""); print; exit}' "$CONFIG" 2>/dev/null)"
 [ -z "$PREFIX" ] && PREFIX="ticket/"

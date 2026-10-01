@@ -29,6 +29,7 @@
 
 - Enforcement layer: hooks, tool configs, CI, `config.yml` are HIGH; `scripts/` is MEDIUM. cite:.agentic/config.yml needle:"scripts/hooks/**"
 - Host auth, payments, migrations (see `risk_paths`). cite:.agentic/config.yml needle:"risk_paths"
+- An unanswered ticket stays `blocked-on-answers` until Open questions is `none` and a human sets `status: open`. Product writes are denied until then. cite:scripts/gate.sh needle:"blocked-on-answers"
 - Remote fetch is `guard.network` in config. New dependencies stay on the ticket (`new_deps`). cite:.agentic/config.yml needle:"new_deps"
 
 ## ADR Index

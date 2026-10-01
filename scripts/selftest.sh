@@ -52,7 +52,7 @@ PY
 # Fill a gate.sh-created ticket: scope globs (comma list) and one Done Contract check.
 fill() {  # FILE GLOBS CHECK
   python3 - "$@" <<'PY'
-import sys
+import re, sys
 p, globs, check = sys.argv[1:4]
 s = open(p).read()
 lines = "\n".join('  - "%s"' % g for g in globs.split(","))
@@ -63,6 +63,10 @@ s = s.replace("1. <testable assertion that defines done> — Check: `<runnable c
 s = s.replace("1. <testable assertion> — Check: `<runnable command>`\n2. <testable assertion> — Check: `<runnable command>`", "1. it works — Check: `%s`" % check)
 s = s.replace("**NARROWING** — <one-line rationale>", "**NARROWING** — small")
 s = s.replace("**NARROWING | EXPANDING** — <rationale. EXPANDING → status blocked-on-alignment + /agentic-grill>", "**NARROWING** — small")
+s = s.replace("status: blocked-on-answers", "status: open", 1)
+for label in ("Outcome", "User", "Why now", "Success", "Constraint"):
+    s = s.replace("- **%s:**\n" % label, "- **%s:** filled\n" % label)
+s = re.sub(r"<[^>\n]+>", lambda m: m.group(0) if m.group(0).startswith("<!--") else "filled", s)
 open(p, "w").write(s)
 PY
 }
@@ -74,6 +78,7 @@ make_base() {
     if [ -e "$ROOT/$f" ] || [ -L "$ROOT/$f" ]; then echo "$f"; fi
   done > "$TMP/files"
   (cd "$ROOT" && tar -cf - -T "$TMP/files") | (cd "$BASE" && tar -xf -)
+  find "$BASE/.agentic/tickets" -name '*.md' -delete
   set_cfg "$BASE/.agentic/config.yml" '^  test: .*$' '  test: "true"'
   set_cfg "$BASE/.agentic/config.yml" '^  lint: .*$' '  lint: ""'
   (cd "$BASE" && git init -q -b main && git config user.email t@t && git config user.name t \
@@ -87,22 +92,15 @@ fixture() {  # NAME -> path of a fresh copy of the base repo
 
 cat > "$TMP/critic.sh" <<'EOF'
 #!/usr/bin/env bash
-# Fake Mode B reviewer. Env: VERDICT (APPROVED), CLAIM (test -f src/bar.txt).
+# Fake Mode B reviewer. Env: FINDING (one findings line, or empty for none).
 test -f "$AGENTIC_BRIEF" || { echo "no brief" >&2; exit 3; }
 cat <<R
 # Review — Ticket $AGENTIC_NN
 **Reviewer:** command
 
-## Claims
-| Claim | Command | Result |
-|---|---|---|
-| bar exists | \`${CLAIM:-test -f src/bar.txt}\` | held |
+## Findings
 
-## Tests
-no tests needed
-
-## Verdict
-**Verdict:** ${VERDICT:-APPROVED}
+${FINDING:-none}
 R
 EOF
 chmod +x "$TMP/critic.sh"
@@ -163,18 +161,7 @@ refute "README.md is outside scripts/**" glob_match "README.md" "scripts/**"
 eq "scripts/hooks/guard.sh floors HIGH" "$(path_risk_floor scripts/hooks/guard.sh)" "HIGH"
 eq "scripts/gate.sh floors MEDIUM" "$(path_risk_floor scripts/gate.sh)" "MEDIUM"
 if config_list floor_ignore | grep -q md; then ok "floor_ignore lists markdown"; else no "floor_ignore lists markdown"; fi
-cat > "$TMP/report.md" <<'EOF'
-**Head:** abc1234
-## Claims
-| Claim | Command | Result |
-|---|---|---|
-| piped | `echo x \| grep x` | held |
-| placeholder | `<command>` | held |
-## Verdict
-**Verdict:** APPROVED
-EOF
-eq "claim_commands unescapes \\| and skips placeholders" "$(claim_commands "$TMP/report.md" | tr '\n' ';')" "echo x | grep x;"
-eq "report_verdict" "$(report_verdict "$TMP/report.md")" "APPROVED"
+printf '**Head:** abc1234\n' > "$TMP/report.md"
 eq "report_head" "$(report_head "$TMP/report.md")" "abc1234"
 check "model-check allows inherit" "$SCRIPT_DIR/model-check.sh" critic
 
@@ -212,11 +199,21 @@ scope_paths:
 ## Request
 
 - **Verbatim:** $3
+- **Restatement:** the outcome for the caller
+- **Cause:** the request arrived
 - **Out of scope:** $4
 
 ## Done Contract
 
 1. it holds — $5
+
+## Constraints
+
+- stay inside scope
+
+## Open questions
+
+none
 
 ## Blast Radius
 
@@ -237,6 +234,34 @@ refute "lone ** scope on LOW fails"         tl open '"**"' '"x"' other "$C" NARR
 refute "EXPANDING while open fails"         tl open README.md '"x"' other "$C" EXPANDING
 check  "EXPANDING when blocked-on-alignment" tl blocked-on-alignment README.md '"x"' other "$C" EXPANDING
 refute "unknown status fails"               tl review README.md '"x"' other "$C" NARROWING
+check  "blocked-on-answers with none lints" tl blocked-on-answers README.md '"x"' other "$C" NARROWING
+refute "placeholder Verbatim fails"         tl open README.md '"<needs a real quote>"' other "$C" NARROWING
+refute "TBD. Verbatim fails"                tl open README.md '"TBD."' other "$C" NARROWING
+hideq() {
+  lite open README.md '"x"' other "$C" NARROWING | awk '/^none$/ {print "<!-- --> - Should archived rows be included?"; print "none"; next} {print}' > "$TMP/t.md"
+  "$SCRIPT_DIR/ticket-lint.sh" "$TMP/t.md"
+}
+refute "question after a comment closer fails lint" hideq
+qopen() {
+  lite open README.md '"x"' other "$C" NARROWING | sed 's/^none$/- Should archived rows be included?/' > "$TMP/t.md"
+  "$SCRIPT_DIR/ticket-lint.sh" "$TMP/t.md"
+}
+qblock() {
+  lite blocked-on-answers README.md '"x"' other "$C" NARROWING | sed 's/^none$/- Should archived rows be included?/' > "$TMP/t.md"
+  "$SCRIPT_DIR/ticket-lint.sh" "$TMP/t.md"
+}
+no_oq() {
+  lite open README.md '"x"' other "$C" NARROWING | sed '/^## Open questions$/,/^none$/d' > "$TMP/t.md"
+  "$SCRIPT_DIR/ticket-lint.sh" "$TMP/t.md"
+}
+bad_c() {
+  lite open README.md '"x"' other "$C" NARROWING | sed 's/^- stay inside scope$/- <still a placeholder>/' > "$TMP/t.md"
+  "$SCRIPT_DIR/ticket-lint.sh" "$TMP/t.md"
+}
+refute "open question on an open ticket fails" qopen
+check  "open question while blocked-on-answers passes" qblock
+refute "missing Open questions fails"       no_oq
+refute "constraint placeholder fails"       bad_c
 
 # --- debt-lint, floor-guard, memory-lint ---------------------------------------
 
@@ -380,6 +405,23 @@ eq "strict: ticketless_paths allowed" "$(pperm "$H" Write docs/notes.md)" "allow
 eq "strict: .agentic/ allowed" "$(pperm "$H" Write .agentic/tickets/open/05-x.md)" "allow"
 cp "$TMP/config.bak" "$H/.agentic/config.yml"
 
+echo "selftest: protect.sh (unanswered ticket)"
+U="$(fixture unanswered)"
+(
+  cd "$U" && ./scripts/gate.sh new ask --tier LOW >/dev/null
+  fill .agentic/tickets/open/01-ask.md 'src/**' 'test -f src/foo.txt'
+  set_cfg .agentic/tickets/open/01-ask.md '^status: open' 'status: blocked-on-answers'
+)
+eq "blocked-on-answers denies a product write" "$(pperm "$U" Write src/x.txt)" "deny"
+eq "blocked-on-answers allows the ticket edit" "$(pperm "$U" Write .agentic/tickets/open/01-ask.md)" "allow"
+set_cfg "$U/.agentic/tickets/open/01-ask.md" '^status: blocked-on-answers' 'status: "blocked-on-answers"'
+eq "quoted blocked-on-answers denies a product write" "$(pperm "$U" Write src/x.txt)" "deny"
+set_cfg "$U/.agentic/tickets/open/01-ask.md" '^status: "blocked-on-answers"' 'status: blocked-on-answers'
+set_cfg "$U/.agentic/tickets/open/01-ask.md" '^status: blocked-on-answers' 'status: open'
+eq "accepted ticket allows a product write" "$(pperm "$U" Write src/x.txt)" "allow"
+set_cfg "$U/.agentic/tickets/open/01-ask.md" '^none$' '- Should archived rows be included?'
+eq "an open question denies a product write" "$(pperm "$U" Write src/x.txt)" "deny"
+
 echo "selftest: protect.sh + guard.sh (claimed ticket)"
 (
   cd "$H" && ./scripts/gate.sh new add-foo --tier LOW >/dev/null
@@ -427,6 +469,36 @@ printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"ls"},"tool_respo
 has "PostToolUse writes the audit log" "$(cat "$H"/.agentic/state/actions-*.jsonl 2>/dev/null)" '"source":"codex"'
 
 # --- railroad: LOW lane ----------------------------------------------------------
+
+echo "selftest: blocked-on-answers waits for a human"
+W="$(fixture waitans)"
+cd "$W" || exit 1
+./scripts/gate.sh new add-foo --tier LOW >/dev/null 2>&1
+fill .agentic/tickets/open/01-add-foo.md 'src/**' 'test -f src/foo.txt'
+set_cfg .agentic/tickets/open/01-add-foo.md '^status: open' 'status: blocked-on-answers'
+out="$(./scripts/gate.sh next 2>&1)"
+has "bare next waits for acceptance" "$out" "NEXT: human:"
+out="$(./scripts/gate.sh next 01 2>&1)"
+has "next waits for acceptance" "$out" "NEXT: human:"
+has "next names blocked-on-answers" "$out" "blocked-on-answers"
+out="$(./scripts/gate.sh next --all 2>&1)"
+has "next --all lists blocked-on-answers" "$out" "blocked-on-answers"
+out="$(./scripts/gate.sh advance 01 2>&1)"
+has "advance waits for a human" "$out" "blocked-on-answers"
+eq "acceptance wait stays on main" "$(git branch --show-current)" "main"
+refute "acceptance wait creates no ticket branch" git rev-parse --verify --quiet refs/heads/ticket/01-add-foo
+./scripts/gate.sh implement 01 >/dev/null 2>&1 || true
+refute "implement refuses blocked-on-answers" git rev-parse --verify --quiet refs/heads/ticket/01-add-foo
+
+echo "selftest: ASSUMED blocks claim"
+AS="$(fixture assumed)"
+cd "$AS" || exit 1
+./scripts/gate.sh new add-bar --tier MEDIUM >/dev/null 2>&1
+fill .agentic/tickets/open/01-add-bar.md 'src/**' 'test -f src/bar.txt'
+set_cfg .agentic/tickets/open/01-add-bar.md '^\| A1 \| \| \| \| \|$' '| A1 | the API is stable | ASSUMED | none | breaks callers |'
+out="$(./scripts/gate.sh advance 01 2>&1)"
+has "ASSUMED blocks claim" "$out" "ASSUMED"
+eq "ASSUMED does not claim" "$(git branch --show-current)" "main"
 
 echo "selftest: railroad — LOW lane, reopen, CI"
 L="$(fixture low)"
@@ -492,26 +564,29 @@ refute "a product edit makes the stamp stale" ./scripts/stamp-check.sh
 echo "selftest: railroad — MEDIUM, Mode B reviewer"
 M="$(review_fixture medium MEDIUM)"
 cd "$M" || exit 1
-out="$(VERDICT=CHANGES_REQUESTED ./scripts/gate.sh advance 01 2>&1)"
+out="$(FINDING='- F1: `src/bar.txt:1` — bar is wrong' ./scripts/gate.sh advance 01 2>&1)"
 has "verify, check, and the reviewer ran" "$out" "critic: running reviewer"
-has "CHANGES_REQUESTED stops the line" "$out" "CHANGES_REQUESTED"
-rm -f .agentic/journal/01-critic.md
-out="$(CLAIM='test -f src/nope.txt' ./scripts/gate.sh advance 01 2>&1)"
-has "a false reviewer claim blocks" "$out" "claim command failed"
-rm -f .agentic/journal/01-critic.md
-./scripts/gate.sh critic 01 >/dev/null 2>&1
-echo '| extra | `true` | held |' >> .agentic/journal/01-critic.md
+has "an in-bound finding waits for a judgment" "$out" "judge the critic findings"
+lacks "security is not part of the critic turn" "$out" "spawn the security reviewer"
+echo tamper >> .agentic/journal/01-critic.md
 out="$(./scripts/gate.sh advance 01 2>&1)"
 has "editing the report after the reviewer blocks" "$out" "changed after the reviewer"
-rm -f .agentic/journal/01-critic.md
+rm -f .agentic/journal/01-critic.md .agentic/journal/01-critic-response.md
 set_cfg .agentic/tickets/open/01-add-bar.md '^\| A1 \| \| \| \| \|$' '| A1 | the API is stable | ASSUMED | none | breaks callers |'
 out="$(./scripts/gate.sh advance 01 2>&1)"
 has "an ASSUMED load-bearing row blocks ship" "$out" "ASSUMED"
 set_cfg .agentic/tickets/open/01-add-bar.md '\| ASSUMED \|' '| VERIFIED |'
 out="$(./scripts/gate.sh advance 01 2>&1)"
-check "MEDIUM ships after an approved review" test -f .agentic/tickets/closed/01-add-bar.md
+check "MEDIUM ships after the findings are clear" test -f .agentic/tickets/closed/01-add-bar.md
 check "close commit carries the report and lessons" \
   sh -c "git show --name-only --format= HEAD | grep -q 01-critic.md && git show --name-only --format= HEAD | grep -q lessons/01.md"
+
+echo "selftest: an unchanged-line finding is ignored"
+U="$(review_fixture unbound MEDIUM)"
+cd "$U" || exit 1
+out="$(FINDING='- F1: `README.md:1` — not a changed line' ./scripts/gate.sh advance 01 2>&1)"
+lacks "an unchanged-line finding is not judged" "$out" "judge the critic findings"
+check "an unchanged-line finding does not block ship" test -f .agentic/tickets/closed/01-add-bar.md
 
 echo "selftest: railroad — MEDIUM, Mode A (in-session subagent)"
 A="$(MODEA=1 review_fixture modea MEDIUM)"
@@ -519,6 +594,8 @@ cd "$A" || exit 1
 out="$(./scripts/gate.sh advance 01 2>&1)"
 has "Mode A hands the agent a brief" "$out" "spawn the reviewer"
 check "the brief exists" test -f .agentic/state/payload-01/BRIEF.md
+lacks "the critic brief does not name security" "$(cat .agentic/state/payload-01/BRIEF.md)" "BRIEF-security"
+has "the brief forbids anything but the changed lines" "$(cat .agentic/state/payload-01/BRIEF.md)" "forbidden"
 {
   echo "**Head:** $(cat .agentic/state/payload-01/HEAD)"
   AGENTIC_NN=01 AGENTIC_BRIEF=.agentic/state/payload-01/BRIEF.md "$TMP/critic.sh"
@@ -539,6 +616,16 @@ check "HIGH on a HIGH path gets a security report" test -f .agentic/journal/01-c
 has "HIGH merge is a human's" "$out" "human"
 git checkout -q main
 eq "guard denies an agent merging HIGH" "$(gperm "$R" 'git merge ticket/01-add-bar')" "deny"
+
+echo "selftest: security waits until the critic findings are judged"
+Q="$(FILE=src/auth/login.txt review_fixture secwait HIGH)"
+cd "$Q" || exit 1
+out="$(FINDING='- F1: `src/auth/login.txt:1` — auth check' ./scripts/gate.sh advance 01 2>&1)"
+has "a critic finding is judged before security" "$out" "judge the critic findings"
+refute "security report is not written yet" test -f .agentic/journal/01-critic-security.md
+printf 'F1: declined\n' > .agentic/journal/01-critic-response.md
+./scripts/gate.sh advance 01 >/dev/null 2>&1
+check "security runs after the critic judgment" test -f .agentic/journal/01-critic-security.md
 
 # --- railroad: parallel ------------------------------------------------------------
 

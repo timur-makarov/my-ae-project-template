@@ -1,5 +1,5 @@
 ---
-status: open
+status: blocked-on-answers
 type: directive
 risk_tier: LOW
 template: lite
@@ -35,6 +35,10 @@ scope_paths:
      publishes anything) → set Status to blocked-on-alignment, list under map.md §4,
      and run /agentic-grill before any implementation.
      irreversibility without rollback is EXPANDING. -->
+
+## Open questions
+
+none
 
 ## Resolution
 

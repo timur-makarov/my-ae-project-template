@@ -27,4 +27,4 @@ HIGH: + Ship-readiness.
 - Rollback field is a real command or an expand-contract plan
 - Threat boundary reviewed for untrusted input (security fan-out on HIGH risk_paths)
 - Human merge for HIGH (`risk.high_requires_human_merge`)
-- The reviewer's watchlist names the decaying fact to watch after merge
+- Declined findings are listed in the response files next to the reports

@@ -9,7 +9,7 @@
 #   scripts/gate.sh new <slug> [--tier LOW|MEDIUM|HIGH] [--title "..."]
 #   scripts/gate.sh implement NN [--worktree] [--widen]   claim the ticket
 #   scripts/gate.sh check NN            run the Done Contract Check: commands
-#   scripts/gate.sh critic NN           reviewer payload / Mode B reviewer / claims
+#   scripts/gate.sh critic NN           critic payload / Mode B critic (security is later)
 #   scripts/gate.sh ship NN             final checks, close the ticket on its branch
 #   scripts/gate.sh reopen NN           closed but unmerged ticket back to in-progress
 #   scripts/gate.sh pr NN [--require-shipped]   read-only revalidation (CI)
@@ -229,6 +229,49 @@ checks_ok() { record_fresh "$STATE/checks-$NN.json" "$(check_cmds | sha_text)"; 
 
 CRITIC_REPORT() { printf '%s' "$JOURNAL/$NN-critic.md"; }
 SECURITY_REPORT() { printf '%s' "$JOURNAL/$NN-critic-security.md"; }
+CRITIC_RESPONSE() { printf '%s' "$JOURNAL/$NN-critic-response.md"; }
+SECURITY_RESPONSE() { printf '%s' "$JOURNAL/$NN-critic-security-response.md"; }
+
+report_sha_ok() {
+  local f="$1" rec
+  [ -f "$f" ] || return 1
+  rec="$STATE/reviewer-$(basename "$f" .md).sha"
+  [ -f "$rec" ] || return 0
+  [ "$(cat "$rec")" = "$(sha_file "$f")" ]
+}
+
+# Report exists, was not edited after the reviewer wrote it, and its Head is on this branch.
+report_ready() {
+  local f="$1" h
+  [ -f "$f" ] || return 1
+  report_sha_ok "$f" || return 1
+  h="$(report_head "$f")"
+  [ -n "$h" ] || return 1
+  grep -q '^## Findings' "$f" || return 1
+  git -C "$ROOT" merge-base --is-ancestor "$h" HEAD >/dev/null 2>&1
+}
+
+# 0 when every in-bound finding is "fixed" or "declined" in the response file.
+findings_judged() {
+  local report="$1" response="$2" id ids
+  ids="$(bound_findings "$report")" || return 1
+  [ -n "$ids" ] || return 0
+  while IFS=$'\t' read -r id _; do
+    [ -z "$id" ] && continue
+    [ -f "$response" ] || return 1
+    grep -Eq "(^|[^A-Za-z0-9])${id}:[[:space:]]*(fixed|declined)([^[:alnum:]_]|$)" "$response" || return 1
+  done <<< "$ids"
+}
+
+judge_text() {
+  local kind="$1" report="$2" response="$3" id loc msg list=""
+  while IFS=$'\t' read -r id loc msg; do
+    [ -z "$id" ] && continue
+    list="${list}${id} ${loc} — ${msg}; "
+  done < <(bound_findings "$report")
+  printf 'judge the %s findings: %sFix a finding an ordinary caller of the template or a project hits. Decline the rest in %s, one line per id ("F1: declined" or "F1: fixed").' \
+    "$kind" "$list" "$(relpath_from "$response")"
+}
 
 security_required() {
   [ "$TIER" = "HIGH" ] || return 1
@@ -241,37 +284,10 @@ security_required() {
   return 1
 }
 
-required_reports() {
-  CRITIC_REPORT; echo
-  if security_required; then SECURITY_REPORT; echo; fi
+security_payload_current() {
+  payload_current || return 1
+  [ -f "$STATE/payload-$NN/BRIEF-security.md" ]
 }
-
-report_current() {
-  local f="$1" h
-  [ -f "$f" ] || return 1
-  h="$(report_head "$f")"
-  [ -n "$h" ] || return 1
-  [ "$(is_dirty)" = "false" ] || return 1
-  product_same "$h"
-}
-
-reports_current() {
-  local f
-  while IFS= read -r f; do
-    [ -z "$f" ] && continue
-    report_current "$f" || return 1
-  done < <(required_reports)
-}
-
-reports_key() {
-  local f
-  while IFS= read -r f; do
-    [ -z "$f" ] && continue
-    cat "$f" 2>/dev/null
-  done < <(required_reports) | sha_text
-}
-
-claims_ok() { record_fresh "$STATE/claims-$NN.json" "$(reports_key)"; }
 
 payload_current() {
   local h
@@ -305,10 +321,15 @@ row() { WHO="$1"; NEXT_MSG="$2"; WHY="$3"; STEP_FN="${4:-}"; THEN=""; }
 compute_next() {
   WHO="" NEXT_MSG="" WHY="" THEN="" STEP_FN=""
   if [ -z "$NN" ]; then
-    local f id st cand="" blk
+    local f id st cand="" blk waiting=""
     for f in "$TICKETS_OPEN"/*.md; do
       [ -f "$f" ] || continue
       st="$(ticket_yaml "$f" status)"
+      if [ "$st" = "blocked-on-answers" ]; then
+        id="$(basename "$f" | sed 's/-.*//')"
+        [ -z "$waiting" ] && waiting="$id"
+        continue
+      fi
       [ "$st" = "open" ] || [ "$st" = "in-progress" ] || continue
       [ -n "$(unresolved_blockers "$f")" ] && continue
       id="$(basename "$f" | sed 's/-.*//')"
@@ -316,7 +337,9 @@ compute_next() {
       cand="$cand $id"
     done
     cand="${cand# }"
-    if [ -n "$cand" ]; then
+    if [ -n "$waiting" ]; then
+      row human "answer ## Open questions for ticket $waiting (one per turn; independent questions may be listed together) or accept the Restate Contract, then set status: open" "ticket $waiting is blocked-on-answers"
+    elif [ -n "$cand" ]; then
       row agent "scripts/gate.sh advance ${cand%% *}" "open, unblocked tickets: $cand"
     else
       row rest "nothing to do — new work starts with /agentic-task (scripts/gate.sh new <slug> --tier LOW|MEDIUM|HIGH)" "no open, unblocked ticket in this worktree"
@@ -365,11 +388,25 @@ compute_next() {
     return
   fi
 
+  if [ "$STATUS" = "blocked-on-answers" ]; then
+    row human "answer ## Open questions (one per turn; independent questions may be listed together) or accept the Restate Contract, then set status: open" "status is blocked-on-answers"
+    return
+  fi
+
   local blockers
   blockers="$(unresolved_blockers "$TICKET")"
   if [ -n "$blockers" ]; then
     row agent "ship the blocker first: scripts/gate.sh advance ${blockers%% *}" "blocked_by $blockers not closed"
     return
+  fi
+
+  if ! claimed_here; then
+    local assumed
+    assumed="$(assumed_left)"
+    if [ -n "$assumed" ]; then
+      row agent "resolve ASSUMED load-bearing rows in $(relpath_from "$TICKET") before claim — verify each, or ask" "ASSUMED rows block claim"
+      return
+    fi
   fi
 
   if [ -f "$STATE/step-$NN.json" ]; then
@@ -394,21 +431,6 @@ compute_next() {
     row gate "claim" "not claimed in this worktree" step_implement
     return
   fi
-
-  local f v
-  while IFS= read -r f; do
-    [ -z "$f" ] && continue
-    report_current "$f" || continue
-    v="$(report_verdict "$f")"
-    case "$v" in
-      CHANGES_REQUESTED)
-        row agent "fix the findings in $(relpath_from "$f"), commit" "reviewer: CHANGES_REQUESTED"
-        THEN="scripts/gate.sh advance $NN"; return ;;
-      REOPEN_REQUIRED)
-        row agent "rethink the approach per $(relpath_from "$f"); fix the ticket or the code, commit" "reviewer: REOPEN_REQUIRED"
-        THEN="scripts/gate.sh advance $NN"; return ;;
-    esac
-  done < <([ "$FAST" -eq 1 ] || required_reports)
 
   if ! has_product_diff; then
     row agent "implement: edit files inside scope_paths ($(tr '\n' ' ' < "$STATE/scope-$NN.txt"))" "no product change against $(base_branch) yet"
@@ -436,23 +458,54 @@ compute_next() {
   if ! stamp_ok; then row gate "verify" "no fresh green verify stamp for this product state" step_verify; return; fi
   if ! checks_ok; then row gate "check" "Done Contract checks not green for this product state" step_check; return; fi
 
-  if ! reports_current; then
+  local cr sr
+  cr="$(CRITIC_REPORT)"
+  sr="$(SECURITY_REPORT)"
+  if [ -f "$cr" ] && ! report_sha_ok "$cr"; then
+    row gate "critic" "critic report was edited after the reviewer wrote it" step_critic
+    return
+  fi
+  if ! report_ready "$cr"; then
     if [ -n "$(config_get critic.command)" ] || ! payload_current; then
-      row gate "critic" "no reviewer report for this product state" step_critic
+      row gate "critic" "no critic report for this branch" step_critic
     else
-      row agent "spawn the reviewer: agentic-evaluator subagent with brief $(relpath_from "$STATE/payload-$NN/BRIEF.md") (one per report named there, same turn)" "reviewer payload is ready; no report yet"
+      row agent "spawn the reviewer: agentic-evaluator subagent with brief $(relpath_from "$STATE/payload-$NN/BRIEF.md"). It returns findings on the changed lines. Security runs only after those findings are judged." "critic payload is ready"
       THEN="scripts/gate.sh advance $NN"
     fi
     return
   fi
-  if ! claims_ok; then row gate "critic" "reviewer claims not re-run for this report" step_critic; return; fi
+  if ! findings_judged "$cr" "$(CRITIC_RESPONSE)"; then
+    row agent "$(judge_text critic "$cr" "$(CRITIC_RESPONSE)")" "the critic returned findings on changed lines"
+    THEN="scripts/gate.sh advance $NN"
+    return
+  fi
+  if security_required; then
+    if [ -f "$sr" ] && ! report_sha_ok "$sr"; then
+      row gate "security" "security report was edited after the reviewer wrote it" step_security
+      return
+    fi
+    if ! report_ready "$sr"; then
+      if [ -n "$(config_get critic.command)" ] || ! security_payload_current; then
+        row gate "security" "critic findings are judged; security has not reviewed this tree" step_security
+      else
+        row agent "spawn the security reviewer: agentic-evaluator subagent with brief $(relpath_from "$STATE/payload-$NN/BRIEF-security.md"). It returns findings on the changed lines." "security payload is ready"
+        THEN="scripts/gate.sh advance $NN"
+      fi
+      return
+    fi
+    if ! findings_judged "$sr" "$(SECURITY_RESPONSE)"; then
+      row agent "$(judge_text security "$sr" "$(SECURITY_RESPONSE)")" "the security reviewer returned findings on changed lines"
+      THEN="scripts/gate.sh advance $NN"
+      return
+    fi
+  fi
 
   if ! lessons_ok; then
     row agent "write .agentic/journal/lessons/$NN.md: '- [$NN] <lesson>' lines or 'Lessons: none' (see /agentic-archive)" "MEDIUM/HIGH ship distills memory"
     THEN="scripts/gate.sh advance $NN"
     return
   fi
-  row gate "ship" "green: stamp, checks, review, claims, lessons" step_ship
+  row gate "ship" "green: stamp, checks, critic, security, lessons" step_ship
 }
 
 print_next() {
@@ -731,8 +784,8 @@ step_new() {
     "$ROOT/.agentic/templates/ticket-$tpl.md" > "$dest"
   ticket_set "$dest" risk_tier "$tier"
   echo "created $(relpath_from "$dest")"
-  echo "NEXT: fill Request, Done Contract (each assertion with Check: \`<command>\`) and scope_paths"
-  echo "THEN: scripts/gate.sh advance $NN"
+  echo "NEXT: fill the ticket. No template leftovers. ## Open questions is none, or real questions while status stays blocked-on-answers"
+  echo "THEN: a human sets status: open, then scripts/gate.sh advance $NN"
   exit 0
 }
 
@@ -789,8 +842,12 @@ step_implement() {
   case "$STATUS" in
     open|in-progress) ;;
     blocked-on-alignment) fail "ticket is blocked-on-alignment — /agentic-grill $NN" ;;
+    blocked-on-answers) fail "ticket is blocked-on-answers — a human sets status: open before claim" ;;
     *) fail "status '$STATUS' cannot be claimed" ;;
   esac
+  local assumed
+  assumed="$(assumed_left)"
+  [ -z "$assumed" ] || fail "ASSUMED load-bearing rows remain — verify them or ask before claiming:\n$assumed"
   local blockers
   blockers="$(unresolved_blockers "$TICKET")"
   [ -z "$blockers" ] || fail "blocked_by $blockers not closed"
@@ -857,36 +914,35 @@ step_check() {
 }
 
 write_brief() {
-  local dir="$1" report="$2" persona="$3" n
-  n="$(dc_assertion_count "$TICKET")"
+  local dir="$1" report="$2" persona="$3"
   {
     echo "# Review brief — ticket $NN ($TIER)"
     echo
     echo "You are the evaluator. You did not write this change and you do not trust its author."
     echo "Read-only: do not edit product files. The only file you write is the report."
     echo
+    echo "Review only the changed lines in diff.md and the logic those lines implement."
+    echo "Reading the containing block is allowed so you can see what a changed line does."
+    echo "Anything else is forbidden: unchanged files, unchanged lines, imagined inputs,"
+    echo "encodings, cousin cases, a verdict, and claim commands."
+    echo
     echo "- Procedure: .agents/skills/agentic-critic/SKILL.md"
     [ -n "$persona" ] && echo "- Persona: $persona"
     echo "- Evidence in $(relpath_from "$dir")/: contract.md, diff.md, checks.json, verify-stamp.json"
-    echo "- You may read any repo file and run read-only commands (tests, greps)."
     echo "- Report template: .agentic/templates/critic_report.md"
     echo "- Write the report to: $report"
     echo
     echo "The report must contain:"
-    echo "- \`**Head:** $(cat "$dir/HEAD")\` — the commit you evaluated"
-    echo "- \`**Verdict:** APPROVED | CHANGES_REQUESTED | REOPEN_REQUIRED\`"
-    if [ -z "$persona" ]; then
-      echo "- a \`## Claims\` table with at least $n row(s), one per Done Contract assertion, each with a"
-    else
-      echo "- a \`## Claims\` table with at least 1 row, each with a"
-    fi
-    echo "  runnable command. The gate re-runs every command; any failure blocks ship."
-    echo "- a judgment on the tests: would they fail without this change?"
+    echo "- \`**Head:** $(cat "$dir/HEAD")\`"
+    echo "- \`## Findings\`"
+    echo "- either the single word \`none\`, or lines \`- F1: \\\`path:line\\\` — what the changed logic does to an ordinary caller\`"
+    echo
+    echo "Return that findings list to the author. The author decides what to fix."
   } > "$dir/${4:-BRIEF.md}"
 }
 
 build_payload() {
-  local dir="$STATE/payload-$NN" ref mb
+  local mode="${1:-critic}" dir="$STATE/payload-$NN" ref mb
   rm -rf "$dir"
   mkdir -p "$dir"
   current_head > "$dir/HEAD"
@@ -906,9 +962,8 @@ build_payload() {
   cp "$STATE/checks-$NN.json" "$dir/checks.json" 2>/dev/null || true
   last_stamp > "$dir/verify-stamp.json" 2>/dev/null || true
   write_brief "$dir" "$(relpath_from "$(CRITIC_REPORT)")" "" BRIEF.md
-  if security_required; then
+  if [ "$mode" = "security" ]; then
     write_brief "$dir" "$(relpath_from "$(SECURITY_REPORT)")" ".agents/personas/security-auditor.md" BRIEF-security.md
-    printf '\nA second, independent reviewer uses BRIEF-security.md in the same turn.\n' >> "$dir/BRIEF.md"
   fi
   echo "payload: $(relpath_from "$dir")"
 }
@@ -937,20 +992,6 @@ run_reviewer() {
   sha_file "$report" > "$STATE/reviewer-$(basename "$report" .md).sha"
 }
 
-validate_report() {
-  local f="$1" min="$2" v n rec
-  v="$(report_verdict "$f")"
-  [ -n "$v" ] || fail "$(relpath_from "$f") has no **Verdict:** line"
-  [ -n "$(report_head "$f")" ] || fail "$(relpath_from "$f") has no **Head:** line"
-  rec="$STATE/reviewer-$(basename "$f" .md).sha"
-  if [ -f "$rec" ] && [ "$(cat "$rec")" != "$(sha_file "$f")" ]; then
-    fail "$(relpath_from "$f") changed after the reviewer wrote it — delete it and re-run the reviewer"
-  fi
-  [ "$v" = "APPROVED" ] || fail "$(relpath_from "$f") verdict is $v — address it, commit, re-review"
-  n="$(claim_commands "$f" | grep -c .)"
-  [ "$n" -ge "$min" ] || fail "$(relpath_from "$f") has $n claim command(s); need at least $min"
-}
-
 step_critic() {
   STEP=critic
   [ -n "$TICKET" ] || fail "ticket $NN not found"
@@ -958,33 +999,42 @@ step_critic() {
   [ "$FAST" -eq 0 ] || fail "LOW fast-lane tickets have no reviewer step"
   [ "$(is_dirty)" = "false" ] || fail "commit first — the reviewer evaluates a commit"
   checks_ok || fail "Done Contract checks not green for this tree: scripts/gate.sh check $NN"
-
-  if ! reports_current; then
-    payload_current || build_payload
-    if [ -n "$(config_get critic.command)" ]; then
-      report_current "$(CRITIC_REPORT)" || run_reviewer "$(CRITIC_REPORT)" "$STATE/payload-$NN/BRIEF.md"
-      if security_required; then
-        report_current "$(SECURITY_REPORT)" || run_reviewer "$(SECURITY_REPORT)" "$STATE/payload-$NN/BRIEF-security.md"
-      fi
-    else
-      echo "NEXT: spawn the reviewer (agentic-evaluator subagent) with $(relpath_from "$STATE/payload-$NN/BRIEF.md")"
-      finish 0
-    fi
+  if [ -f "$(CRITIC_REPORT)" ] && ! report_sha_ok "$(CRITIC_REPORT)"; then
+    fail "$(relpath_from "$(CRITIC_REPORT)") changed after the reviewer wrote it — delete it and re-run the reviewer"
   fi
+  if report_ready "$(CRITIC_REPORT)"; then
+    finish 0
+  fi
+  build_payload critic
+  if [ -n "$(config_get critic.command)" ]; then
+    run_reviewer "$(CRITIC_REPORT)" "$STATE/payload-$NN/BRIEF.md"
+  else
+    echo "NEXT: spawn the reviewer (agentic-evaluator subagent) with $(relpath_from "$STATE/payload-$NN/BRIEF.md")"
+  fi
+  finish 0
+}
 
-  validate_report "$(CRITIC_REPORT)" "$(dc_assertion_count "$TICKET")"
-  security_required && validate_report "$(SECURITY_REPORT)" 1
-
-  local tmp f
-  tmp="$(mktemp)"
-  while IFS= read -r f; do
-    [ -z "$f" ] && continue
-    claim_commands "$f"
-  done < <(required_reports) > "$tmp"
-  run_commands "$tmp" "$STATE/claims-$NN.json" "claims-$NN" "$(reports_key)"
-  local rc=$?
-  rm -f "$tmp"
-  [ "$rc" -eq 0 ] || fail "a reviewer claim command failed (output above) — the report's claim is false, or the code is"
+step_security() {
+  STEP=security
+  [ -n "$TICKET" ] || fail "ticket $NN not found"
+  set_fast
+  [ "$FAST" -eq 0 ] || fail "LOW fast-lane tickets have no security step"
+  security_required || fail "this ticket has no security review"
+  report_ready "$(CRITIC_REPORT)" || fail "the critic has not reported yet"
+  findings_judged "$(CRITIC_REPORT)" "$(CRITIC_RESPONSE)" || fail "judge the critic findings before security"
+  [ "$(is_dirty)" = "false" ] || fail "commit first — the security reviewer evaluates a commit"
+  if [ -f "$(SECURITY_REPORT)" ] && ! report_sha_ok "$(SECURITY_REPORT)"; then
+    fail "$(relpath_from "$(SECURITY_REPORT)") changed after the reviewer wrote it — delete it and re-run the reviewer"
+  fi
+  if report_ready "$(SECURITY_REPORT)"; then
+    finish 0
+  fi
+  build_payload security
+  if [ -n "$(config_get critic.command)" ]; then
+    run_reviewer "$(SECURITY_REPORT)" "$STATE/payload-$NN/BRIEF-security.md"
+  else
+    echo "NEXT: spawn the security reviewer (agentic-evaluator subagent) with $(relpath_from "$STATE/payload-$NN/BRIEF-security.md")"
+  fi
   finish 0
 }
 
@@ -1012,17 +1062,11 @@ pr_checks() {
   fi
   checks_ok || run_checks || fail "a Done Contract check failed (output above)"
   if [ "$FAST" -eq 0 ]; then
-    reports_current || fail "no reviewer report for this product state (Head: must match)"
-    validate_report "$(CRITIC_REPORT)" "$(dc_assertion_count "$TICKET")"
-    security_required && validate_report "$(SECURITY_REPORT)" 1
-    if ! claims_ok; then
-      local tmp f rc
-      tmp="$(mktemp)"
-      while IFS= read -r f; do [ -n "$f" ] && claim_commands "$f"; done < <(required_reports) > "$tmp"
-      run_commands "$tmp" "$STATE/claims-$NN.json" "claims-$NN" "$(reports_key)"
-      rc=$?
-      rm -f "$tmp"
-      [ "$rc" -eq 0 ] || fail "a reviewer claim command failed (output above)"
+    report_ready "$(CRITIC_REPORT)" || fail "no critic report for this branch"
+    findings_judged "$(CRITIC_REPORT)" "$(CRITIC_RESPONSE)" || fail "critic findings are not judged — $(relpath_from "$(CRITIC_RESPONSE)") needs F1: fixed or F1: declined"
+    if security_required; then
+      report_ready "$(SECURITY_REPORT)" || fail "no security report for this branch"
+      findings_judged "$(SECURITY_REPORT)" "$(SECURITY_RESPONSE)" || fail "security findings are not judged — $(relpath_from "$(SECURITY_RESPONSE)") needs F1: fixed or F1: declined"
     fi
   fi
 }
@@ -1137,6 +1181,8 @@ next_all() {
     blk="$(unresolved_blockers "$f")"
     if [ "$st" = "blocked-on-alignment" ]; then
       echo "  $id $t blocked-on-alignment — $(ticket_title "$f")"
+    elif [ "$st" = "blocked-on-answers" ]; then
+      echo "  $id $t blocked-on-answers — $(ticket_title "$f")"
     elif [ -n "$blk" ]; then
       echo "  $id $t waiting on $blk — $(ticket_title "$f")"
     else

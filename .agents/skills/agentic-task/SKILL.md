@@ -39,13 +39,19 @@ This reserves the next ticket number atomically (safe with parallel agents) and 
   runnable command, not the blanket suite. The gate runs these; they define done.
 - **Front matter:** `scope_paths` (the globs you will edit; frozen at claim), `reversibility`,
   `rollback`, `new_deps`, `blocked_by`. `irreversible` without a compensating rollback is EXPANDING.
+- **Open questions:** `none`, or real questions. A question means `status: blocked-on-answers`.
+  One question per turn. List together only questions that are already independent of each other.
+  Template leftovers (a single `<placeholder>`, or `TBD`) fail lint.
+- New tickets start at `status: blocked-on-answers`. Do not set `status: open`. The human does
+  that after accepting the Restate Contract (lite: the Restatement). Until then `gate.sh next`
+  stays on a human row, and product writes are denied.
 - Never fill full-template sections with platitudes; a field you'd fill that way is one the ticket
   doesn't need.
 
 ## 5. Blast-radius gate
 
-- NARROWING → proceed; state the reading taken.
-- EXPANDING → `status: blocked-on-alignment` and `/agentic-grill`. `gate.sh next` routes it to a human.
+- NARROWING → proceed; state the reading taken. The ticket still waits at `blocked-on-answers` until the human accepts it.
+- EXPANDING → `status: blocked-on-alignment` and `/agentic-grill`. `gate.sh next` routes it to a human. That status replaces `blocked-on-answers` until the grill settles.
 
 ## 6. Validate
 

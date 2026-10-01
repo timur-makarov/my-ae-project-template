@@ -17,11 +17,14 @@ spark
  ├── independently testable modules bundled                → Capability Map, then N tickets
  ├── new work that should be tracked                       → /agentic-task
  ├── a ticket exists                                       → scripts/gate.sh advance NN (/agentic-implement)
+ │     ├── status blocked-on-answers                      → ask the open question, then stop. The human sets status: open
  │     ├── API / public types / OpenAPI                    → /agentic-api
  │     ├── auth / payment / untrusted input                → /agentic-security
  │     ├── tests failing / build red                       → /agentic-debug (stop the line)
  │     └── schema change / API removal                     → /agentic-migrate
- ├── NEXT: spawn the reviewer                              → /agentic-critic (the brief says how)
+ ├── NEXT: spawn the reviewer                              → /agentic-critic (one brief, critic first)
+ ├── NEXT: judge the findings                              → fix or decline, then advance
+ ├── NEXT: spawn the security reviewer                     → /agentic-security (after the critic)
  ├── NEXT: write lessons                                   → /agentic-archive
  ├── NEXT: /agentic-pr                                     → /agentic-pr
  ├── session dying mid-ticket                              → /agentic-handoff

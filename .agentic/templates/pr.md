@@ -28,5 +28,5 @@
 
 ## Review
 
-**Verdict:** <APPROVED — `.agentic/journal/NN-critic.md`> <!-- or "LOW fast lane" -->
-**Security fan-out:** <`.agentic/journal/NN-critic-security.md` or N/A>
+**Critic findings:** <`.agentic/journal/NN-critic.md` and which were fixed or declined, or "LOW fast lane">
+**Security findings:** <`.agentic/journal/NN-critic-security.md` or N/A>

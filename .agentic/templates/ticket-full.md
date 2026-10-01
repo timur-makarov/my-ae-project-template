@@ -1,5 +1,5 @@
 ---
-status: open
+status: blocked-on-answers
 type: directive
 risk_tier: MEDIUM
 template: full
@@ -66,7 +66,7 @@ Standing bar: `.agentic/references/dod.md`. The reviewer holds the diff to it.
 ## Load-Bearing Assumptions
 
 <!-- Only claims the outcome depends on. Verify ASSUMED entries before writing code.
-     Upgrade every ASSUMED row before ship (the gate refuses ASSUMED rows). -->
+     The gate refuses ASSUMED rows at claim. -->
 
 | # | Claim | Status (VERIFIED / INFERRED / ASSUMED) | Evidence pointer | Flip condition & check cost |
 |---|---|---|---|---|
@@ -95,6 +95,10 @@ Standing bar: `.agentic/references/dod.md`. The reviewer holds the diff to it.
      or when the work is independently testable modules. Else write "n/a". -->
 
 n/a
+
+## Open questions
+
+none
 
 ## Resolution
 

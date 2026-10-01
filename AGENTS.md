@@ -18,12 +18,15 @@ again. Do not edit ticket status or move ticket files yourself; `advance` does.
   One claim per branch. `--worktree` on `implement` gives the ticket its own worktree for parallel work.
 - **LOW:** edit inside scope → `advance` commits, runs the Done Contract checks, and ships.
 - **MEDIUM/HIGH:** edit → commit (`NN: ...`) → `advance` runs verify and checks, then builds a
-  reviewer payload → spawn the `agentic-evaluator` subagent on the brief it names → `advance`
-  re-runs every claim in the report → write `.agentic/journal/lessons/NN.md` → `advance` ships.
+  critic payload. Spawn the `agentic-evaluator` subagent on that brief. It returns a findings
+  list on the changed lines. Fix a finding an ordinary caller hits; decline the rest in
+  `.agentic/journal/NN-critic-response.md`. Security runs only after that, and the same way.
+  Then lessons (`journal/lessons/NN.md`) and `advance` ships.
 - **Ship** closes the ticket on its branch (`tickets/closed/`, commit `NN: close`). Then `/agentic-pr`
   pushes and opens the PR. HIGH tickets are merged by a human.
+- **Answers:** a new ticket stays `blocked-on-answers` until a human accepts it and sets `status: open`. `## Open questions` is `none`, or real questions while that status holds. One question per turn; independent questions may be listed together. Product writes are denied until then.
 - **Stuck:** a failed step prints why and what to fix. Fix it, then `advance`. A human-only row
-  (`blocked-on-alignment`, HIGH merge) means stop and say so.
+  (`blocked-on-alignment`, `blocked-on-answers`, HIGH merge) means stop and say so.
 
 Evidence stays valid until a product file changes; editing tickets or journal files never makes
 it stale. Machine state lives in `.agentic/state/` (gitignored, per worktree); do not write there.

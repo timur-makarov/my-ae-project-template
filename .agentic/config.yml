@@ -57,7 +57,7 @@ verify:
 limits:
   max_active_tickets: 1        # in-progress tickets across local branches/worktrees
   stop_followups: 0            # stop hook re-prompts per run when next has agent work
-  command_timeout_secs: 900    # per Check:/claim command
+  command_timeout_secs: 900    # per Check: command
   context_md_max_lines: 120
   intake_strict: true
   max_scope_globs: 5
@@ -75,7 +75,7 @@ craft_skills: true
 # The command reads $AGENTIC_BRIEF, $AGENTIC_PAYLOAD, and $AGENTIC_NN, and prints
 # the report. Set once for the project. A ticket does not switch it.
 critic:
-  fanout: true                 # HIGH diff on a HIGH path: + security reviewer
+  fanout: true                 # after the critic is judged, HIGH diff on a HIGH path: security reviewer
   command: ""
 
 audit:
