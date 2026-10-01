@@ -33,6 +33,7 @@ This is the step that makes the environment improve itself:
 - **Check or guard** — if a command or a `guard.sh` pattern would have caught the escaping defect, add that `Check:` or that pattern.
 - **CONTEXT.md** — if the regression revealed an invariant or risk boundary nobody had written down, write it down now (`cite:path needle:"token"` on the row).
 - **Verify gate** — if a deterministic check could have caught it, add it to the project's verify commands (config `verify:` block) or test suite, so prose never has to remember it again.
+- **Floor** — a path this app keeps treating as ordinary, and that was a real boundary, goes into this project's `risk_paths` via its own ticket. Promotion only adds a floor or a check. Loosening the map is a HIGH ticket. A shape true in every copy is a ticket on the template repo, not an edit from this product diff.
 
 ## 5. Report
 

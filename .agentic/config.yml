@@ -70,12 +70,10 @@ limits:
 floor_guard: true
 craft_skills: true
 
-# Reviewer. Empty command = Mode A: the agent spawns the agentic-evaluator
-# subagent on the payload. A command = Mode B: gate.sh critic runs it headless
-# in a throwaway worktree; stdout is the report. It gets $AGENTIC_BRIEF,
-# $AGENTIC_PAYLOAD, $AGENTIC_NN. Examples:
-#   command: 'claude -p "$(cat "$AGENTIC_BRIEF")" --permission-mode plan'
-#   command: 'codex exec --sandbox read-only "$(cat "$AGENTIC_BRIEF")"'
+# Reviewer. Empty command = Mode A: the author starts a fresh seat on the brief.
+# A command = Mode B: gate.sh runs it in a throwaway worktree; stdout is the report.
+# The command reads $AGENTIC_BRIEF, $AGENTIC_PAYLOAD, and $AGENTIC_NN, and prints
+# the report. Set once for the project. A ticket does not switch it.
 critic:
   fanout: true                 # HIGH diff on a HIGH path: + security reviewer
   command: ""

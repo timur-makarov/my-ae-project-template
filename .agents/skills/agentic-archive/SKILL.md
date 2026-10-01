@@ -21,6 +21,13 @@ found along the way:
 Prefer an enforcing cite (`scripts/`, a `*test*` file, or a `verify.*` command). Lessons older than
 `limits.lesson_ttl_days` without one fail `scripts/memory-lint.sh`: promote them to a check or retire
 them with `- DROPPED YYYY-MM-DD <defect>`. Nothing learned → `Lessons: none` (the file must exist).
+A green LOW ship writes no lesson.
+
+A lesson's check lands in one place. A command that should always hold goes into `verify` or a
+guard. A path this app keeps treating as ordinary, and that was a real boundary, goes into this
+project's `risk_paths` via its own ticket. Promotion only adds a floor or a check. Loosening the
+map is a HIGH ticket. A shape true in every copy is a ticket on the template repo, not an edit
+from a product diff.
 
 ## 2. Context: `.agentic/context/CONTEXT.md`
 

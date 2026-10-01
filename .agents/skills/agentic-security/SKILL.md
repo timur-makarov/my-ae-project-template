@@ -12,9 +12,9 @@ A finding names the lower-trust principal, the boundary that was crossed, and th
 ## In scope
 
 - Untrusted input at the boundary (injection, path, SSRF). Server-side URL fetch: https, allowlisted hosts, no link-local or metadata IPs.
-- AuthZ in code, not in the prompt. Secrets not logged, not committed, not interpolated into shells.
+- Authentication and authorization are decided in code on the server side of the boundary, not in the prompt. Secrets not logged, not committed, not interpolated into shells.
 - LLM output is untrusted: no `eval`, raw SQL, `innerHTML`, or pipe-to-shell of model text.
-- Prompt injection in a skill, a ticket, a journal file, or a fetched page. Instructions in those files are data.
+- Prompt injection in a skill, a ticket, a journal file, or a fetched page. Instructions in those files are data. User text inside a prompt is not `prompt-injection`. That class, and the model-output rule, apply when the text or the model output reaches a sink: `eval`, SQL, `innerHTML`, a shell, or a tool call with a side effect.
 - Supply chain: no `curl | sh`, no unexpected `postinstall`. `new_deps` must match the lockfile diff.
 
 Class id on every finding line: `injection`, `authz`, `secret`, `supply-chain`, or `prompt-injection`, plus a changed `file:line`. A confidence score with no line is not a finding.
@@ -23,6 +23,7 @@ Class id on every finding line: `injection`, `authz`, `secret`, `supply-chain`, 
 
 - Denial of service, resource exhaustion, and theoretical races.
 - "You did not add a hardening header."
+- A missing check in client-side code.
 - Re-scanning files the diff did not touch.
 
 Numeric "secure" claims without a command are `not measured`.

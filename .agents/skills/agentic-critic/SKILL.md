@@ -10,11 +10,13 @@ The author doesn't review its own work. `scripts/gate.sh advance NN` builds a pa
 
 ## Spawning (the author)
 
-- **Mode A** (default, `critic.command: ""`): spawn the `agentic-evaluator` subagent (Cursor
-  `.cursor/agents/`, Claude `.claude/agents/`; in Codex, start a fresh session or subagent with this
-  skill) and tell it: "Review per `.agentic/state/payload-NN/BRIEF.md`." If a `BRIEF-security.md`
-  exists, spawn a second evaluator with that brief in the same turn.
-- **Mode B** (`critic.command` set): `advance` runs the reviewer headless itself. Nothing to spawn.
+`critic.command` is one project setting, chosen once. A ticket does not switch it.
+
+- **Empty command** (Mode A): start a seat that did not write this change. Give it the brief path,
+  `.agentic/state/payload-NN/BRIEF.md`, and tell it to review per that brief. If `BRIEF-security.md`
+  exists, start a second seat on that brief in the same turn.
+- **Command set** (Mode B): `advance` runs `critic.command`. Nothing to spawn. The command reads
+  `AGENTIC_BRIEF` and prints the report.
 
 Then `advance`: it re-runs every command in the report's Claims table. A report changed after a
 Mode B reviewer wrote it is refused.
@@ -33,6 +35,9 @@ The gate has already run the Done Contract checks and scope rules, so don't rest
 3. **The diff.** A finding is a changed line that doesn't do what the claim says, or a command
    that failed. Cite `file:line` or the command. There's no cap on real misses; imagined future
    files are not findings. Sibling callers of a changed function get one sentence or one claim row.
+   If the change moves untrusted input into a sink, apply the finding bar in
+   `.agents/skills/agentic-security/SKILL.md` in this same report. One reviewer. A second seat
+   still runs only when `BRIEF-security.md` is in the brief set.
 4. **Standing bar:** `.agentic/references/dod.md` for the ticket's tier.
 
 Write the report from `.agentic/templates/critic_report.md`, with the `**Head:**` line exactly as
