@@ -31,7 +31,6 @@ Resolve architectural fog and blast-radius expansions through structured rounds 
 When the human answers:
 1. Recompute the frontier; present Round N+1 if new questions unlocked.
 2. When all branches settle:
-   - Record decisions in `.agentic/map.md` §2 Decisions So Far.
-   - If an architectural seam was established, write an ADR to `.agentic/context/adr/` from `.agentic/templates/adr.md` and index it in `CONTEXT.md`.
-   - Update the blocked ticket: blast radius re-classified, Status back to `open`, move from map §4 to §3.
+   - A decision that crosses modules is an ADR in `.agentic/context/adr/` from `.agentic/templates/adr.md`, indexed from `.agentic/context/CONTEXT.md`.
+   - Ticket state stays on the ticket. Update the blocked ticket in place: blast radius re-classified, Status back to `open`.
 3. Report: decisions made, ADRs written, tickets unblocked, next action (`/agentic-implement <NN>`).

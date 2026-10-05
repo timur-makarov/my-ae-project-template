@@ -32,8 +32,8 @@ scope_paths:
 
 **NARROWING** — <one-line rationale>
 <!-- EXPANDING (touches more systems, deletes data, breaks public API, spends money,
-     publishes anything) → set Status to blocked-on-alignment, list under map.md §4,
-     and run /agentic-grill before any implementation.
+     publishes anything) → set Status to blocked-on-alignment and run /agentic-grill
+     before any implementation.
      irreversibility without rollback is EXPANDING. -->
 
 ## Open questions

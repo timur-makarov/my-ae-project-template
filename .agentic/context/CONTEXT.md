@@ -35,3 +35,4 @@
 ## ADR Index
 
 - [0001 — Enforcement vs convention](adr/0001-enforcement-vs-convention.md) — scripts own state; hooks guard the irreversible few; judgment stays prose.
+- [0002 — The human reads the PR](adr/0002-the-human-reads-the-pr.md) — the human reads the PR Summary; map.md stays orientation; an exact true or colon Check fails lint.

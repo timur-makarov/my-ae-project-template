@@ -140,14 +140,8 @@ for f in "${FILES[@]}"; do
         bare="$(printf '%s' "$payload" | tr -d '`' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
         low="$(printf '%s' "$bare" | tr '[:upper:]' '[:lower:]')"
         case "$low" in
-          pass|ok|works)
+          pass|ok|works|true|':')
             err "$f" "vacuous Check: '$payload' — name a runnable command"
-            continue
-            ;;
-          true)
-            if [ "$has_tick" -eq 0 ]; then
-              err "$f" "vacuous Check: true (English) — use \`true\` (shell) or a real command"
-            fi
             continue
             ;;
         esac

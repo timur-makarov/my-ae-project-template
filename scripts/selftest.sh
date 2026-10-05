@@ -179,6 +179,35 @@ eq "lockfile parser sees lodash" "$(lockfile_added_names "$LF" main | tr '\n' ' 
 
 # --- ticket-lint ---------------------------------------------------------------
 
+echo "selftest: map-headings"
+# A heading counts when it is "§N" or starts with "N." / "N " / "N:".
+map_has_section() { # MAP N
+  grep -Eq "^#{1,6}[[:space:]]+(§${2}([^0-9]|$)|${2}([.[:space:]:]|$))" "$1"
+}
+# Fail when a skill or template names map.md §N and that heading is absent.
+map_section_drift() { # MAP DIR...
+  local map="$1" hits line n nums
+  shift
+  hits="$(grep -R -n -E --include='*.md' 'map\.md`?[[:space:]]*§[0-9]+' "$@" || true)"
+  [ -z "$hits" ] && return 0
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    nums="$(printf '%s\n' "$line" | grep -oE 'map\.md`?[[:space:]]*§[0-9]+' | grep -oE '[0-9]+$' | sort -u)"
+    for n in $nums; do
+      map_has_section "$map" "$n" || return 1
+    done
+  done <<EOF
+$hits
+EOF
+}
+mkdir -p "$TMP/mapref/skills" "$TMP/mapref/tpl"
+printf '# Map\n\n## Standing Notes\n' > "$TMP/mapref/map.md"
+printf 'list under map.md §4\n' > "$TMP/mapref/tpl/t.md"
+refute "phantom map.md § fails" map_section_drift "$TMP/mapref/map.md" "$TMP/mapref/skills" "$TMP/mapref/tpl"
+printf '\n## §4 Blocked\n' >> "$TMP/mapref/map.md"
+check "map.md § passes when the heading exists" map_section_drift "$TMP/mapref/map.md" "$TMP/mapref/skills" "$TMP/mapref/tpl"
+check "live map.md headings cover skill and template refs" map_section_drift "$ROOT/.agentic/map.md" "$ROOT/.agents/skills" "$ROOT/.agentic/templates"
+
 echo "selftest: ticket-lint"
 lite() {  # STATUS SCOPE VERBATIM OOS CHECKLINE BLAST
   cat <<EOF
@@ -227,6 +256,10 @@ check  "focused test command is fine"       tl open README.md '"x"' other 'Check
 refute "missing Check: fails"               tl open README.md '"x"' other 'it works' NARROWING
 refute "prose Check: fails"                 tl open README.md '"x"' other 'Check: the page loads' NARROWING
 refute "unquoted Check: true fails"         tl open README.md '"x"' other 'Check: true' NARROWING
+refute "backtick Check: true fails"         tl open README.md '"x"' other 'Check: `true`' NARROWING
+refute "backtick Check: colon fails"        tl open README.md '"x"' other 'Check: `:`' NARROWING
+refute "unquoted Check: colon fails"        tl open README.md '"x"' other 'Check: :' NARROWING
+check  "true inside a larger command passes" tl open README.md '"x"' other 'Check: `grep -q true README.md`' NARROWING
 refute "blanket Check (whole suite) fails"  tl open README.md '"x"' other 'Check: `npm test`' NARROWING
 refute "empty Verbatim fails"               tl open README.md '""' other "$C" NARROWING
 refute "empty Out of scope fails"           tl open README.md '"x"' '' "$C" NARROWING
